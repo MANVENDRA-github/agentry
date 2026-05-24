@@ -142,6 +142,8 @@ Companion reading: [`architecture.md`](architecture.md) for how the system is st
 
 **Revisit when.** Unit tests land for `toCursorRule` and the frontmatter parser (planned for v0.3). At that point CI grows an `npm test` step.
 
+**Updated: v0.3.** Unit tests for `toCursorRule` and the frontmatter parser landed in v0.3 Bundle 1. The CI workflow now runs `npm test` as a third job alongside `sync-determinism` and `frontmatter-lint`.
+
 ## Process
 
 ### D15: Conventional commits enforced by convention, not tooling
@@ -159,3 +161,39 @@ Companion reading: [`architecture.md`](architecture.md) for how the system is st
 **Why.** v1.0 is a commitment to a stable adapter contract. agentry has shipped two adapters; the shape that supports four or five (Codex, OpenCode, Zed, Antigravity) is not yet known. Committing to "no breaking changes" before the shape stabilizes would be premature.
 
 **Revisit when.** Five or more harness adapters are in the tree and have not required schema changes for two consecutive minor releases.
+
+## Strategy and scope
+
+### D17: Curated alternative to ECC, not an ECC competitor
+
+**Decision.** agentry positions as the smaller, sharper, easier-to-read alternative for developers who use multiple AI tools and want a configuration set they can actually read end-to-end. Not as a maximalist all-in-one trying to cover every use case.
+
+**Why.** ECC (the dominant maximalist project) already does maximalism well — hundreds of skills, dozens of agents, a Pro-tier funding model, an active contributor base. A solo-built clone of that positioning would lose on volume and lose on momentum. The alternative niche — a tight, opinionated, multi-harness convenience layer that does fewer things well — is structurally available because maximalist projects cannot serve it without abandoning their own positioning.
+
+**Alternative considered.** Build agentry as a maximalist competitor, betting that better curation or cleaner UX could overtake ECC over time. Rejected because (a) the time investment to reach parity is multi-year, (b) the differentiation would be hard to communicate ("ours is better-built" is weaker than "ours is for a different audience"), and (c) it inverts the project's actual strength.
+
+**Trade-off.** The narrower positioning means agentry will never serve users who want a comprehensive one-stop. That is a deliberate boundary, not a gap.
+
+**Revisit if.** ECC pivots to a position that vacates the curated niche, or agentry's contributor base grows enough that maximalist breadth becomes maintainable.
+
+### D18: v0.1 shipped with one agent and one skill — the minimum to prove the pattern
+
+**Decision.** v0.1 shipped with exactly one agent (`code-reviewer`) and one skill (`tdd-workflow`), plus the sync engine and installers. Resisted the temptation to ship 5-10 of each to look more substantive.
+
+**Why.** The point of v0.1 was to prove the source-of-truth + sync + install pattern works end-to-end across two harnesses. Shipping more content would have added review burden without changing whether the pattern is sound. Two well-written examples set the quality bar; ten mediocre ones lower it.
+
+**Alternative considered.** Ship v0.1 with 5+ agents and 5+ skills to feel more "real" at launch. Rejected — the discipline of shipping less is what differentiates agentry from maximalist alternatives. Starting with restraint signals what the project values.
+
+**Revisit if.** The minimum-viable approach turns out to leave first-time users with nothing useful to do. So far, evidence suggests two well-built examples are enough to demonstrate the framework's value.
+
+### D19: v0.2 shipped Tier 1 + Tier 2 in parallel, without dogfooding v0.1 first
+
+**Decision.** v0.2 expanded to four agents, five skills, five commands, plus CI workflow, doctor/lint scripts, and contributor/authoring docs — all in one release, without using v0.1 in real workflows first to identify gaps.
+
+**Why.** Maintainer judgment that forward motion was more valuable than evidence-driven prioritization at this stage. The expansion stayed defensible by holding two constraints: every component remained universal (no language-specific content) and every component had a one-line justification before shipping.
+
+**Alternative considered.** Dogfood v0.1 for 2-4 weeks, capture findings, and use them to prioritize v0.2 content. Recommended by the design-review process; not chosen. The risk: some v0.2 components may be solving problems the maintainer doesn't actually have, and won't get caught until later usage surfaces the gap.
+
+**Mitigation.** Universal content is harder to be wrong about than stack-specific content. The v0.2 components are all generic enough to be useful in a wide range of workflows even if the maintainer hadn't personally needed them yet.
+
+**Revisit if.** Real usage shows specific v0.2 components are never invoked. At that point retire them rather than letting them inflate the library.
