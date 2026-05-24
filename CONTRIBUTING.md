@@ -9,6 +9,8 @@ Thanks for considering a contribution. agentry is intentionally small. Every add
 - **New harness adapters.** Welcome. Open an issue first so we can align on the source→target mapping before you implement.
 - **Documentation improvements.** Welcome, especially additions to `docs/authoring.md` and `docs/architecture.md` based on real friction you experienced.
 
+Contributions that touch `scripts/frontmatter.js` or `scripts/cursor-transform.js` should include a test in `tests/` that defends the new or changed behavior.
+
 ## Discipline
 
 - **No speculative content.** Add what solves a real problem. "Might be useful" is not enough.
@@ -28,6 +30,7 @@ npm run doctor     # check that everything looks right
 # ... make your changes to agents/, skills/, docs/, scripts/ ...
 npm run sync       # regenerate after every source change
 npm run lint       # validate frontmatter on agents and skills
+npm test           # run unit tests on extracted helpers
 git add -A
 git commit -m "feat: ..."
 ```
