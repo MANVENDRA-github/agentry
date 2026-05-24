@@ -86,7 +86,7 @@ Body of the skill — instructions the agent will follow when this skill is invo
 
 Drop it in `skills/my-skill/SKILL.md`, run `npm run sync`, and it appears in every harness you target. Agents follow a similar pattern under `agents/`.
 
-See [`docs/authoring.md`](docs/authoring.md) for the full authoring guide, and [`docs/architecture.md`](docs/architecture.md) for how the sync engine and harness adapters fit together.
+See [`docs/authoring.md`](docs/authoring.md) for the full authoring guide, [`docs/architecture.md`](docs/architecture.md) for how the sync engine and harness adapters fit together, and [`docs/decisions.md`](docs/decisions.md) for the design decisions and trade-offs behind agentry's shape.
 
 ## Roadmap
 
