@@ -1,6 +1,6 @@
 {
   "name": "agentry",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Author your AI coding agents and skills once. Sync them to every harness you use.",
   "license": "MIT",
   "type": "module",
@@ -8,7 +8,8 @@
     "sync": "node scripts/sync-harnesses.js",
     "sync:dry": "node scripts/sync-harnesses.js --dry-run",
     "doctor": "node scripts/doctor.js",
-    "lint": "node scripts/lint-frontmatter.js"
+    "lint": "node scripts/lint-frontmatter.js",
+    "test": "node --test tests/"
   },
   "engines": {
     "node": ">=18.0.0"
@@ -17,6 +18,7 @@
     "claude",
     "claude-code",
     "cursor",
+    "codex",
     "ai-agents",
     "skills",
     "agent-harness"
