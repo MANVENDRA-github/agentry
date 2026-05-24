@@ -16,31 +16,20 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  parseFrontmatter,
+  checkRequired,
+  checkDescription,
+} from "./frontmatter.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, "..");
 
 const AGENT_REQUIRED = ["name", "description", "tools", "model"];
 const SKILL_REQUIRED = ["name", "description"];
-const MIN_DESCRIPTION_LEN = 20;
 
 function rel(p) {
   return path.relative(REPO_ROOT, p).split(path.sep).join("/");
-}
-
-// Minimal line-based frontmatter parser. Handles `key: value` pairs and
-// `key: [a, b, c]` arrays. Does not handle multi-line YAML — descriptions
-// are kept on a single line by convention.
-function parseFrontmatter(content) {
-  const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/);
-  if (!match) return null;
-  const fields = {};
-  for (const line of match[1].split(/\r?\n/)) {
-    const m = line.match(/^([A-Za-z][A-Za-z0-9_-]*)\s*:\s*(.*)$/);
-    if (!m) continue;
-    fields[m[1]] = m[2].trim();
-  }
-  return fields;
 }
 
 async function readDirSafe(p) {
@@ -51,34 +40,19 @@ async function readDirSafe(p) {
   }
 }
 
-function checkRequired(fields, required) {
-  const missing = [];
-  for (const key of required) {
-    if (!(key in fields) || fields[key] === "") missing.push(key);
-  }
-  return missing;
-}
-
-function checkDescription(desc) {
-  if (!desc) return "missing or empty";
-  if (desc.length < MIN_DESCRIPTION_LEN) {
-    return `too short (${desc.length} chars, minimum ${MIN_DESCRIPTION_LEN})`;
-  }
-  return null;
-}
-
 const failures = [];
 
 async function lintAgent(file) {
   const fullPath = path.join(REPO_ROOT, "agents", file);
   const expectedName = file.replace(/\.md$/, "");
   const content = await fs.readFile(fullPath, "utf8");
-  const fields = parseFrontmatter(content);
-  if (!fields) {
+  const parsed = parseFrontmatter(content);
+  if (!parsed) {
     failures.push({ file: rel(fullPath), errors: ["no frontmatter block"] });
     console.log(`  ✗ ${rel(fullPath)} — no frontmatter`);
     return;
   }
+  const { fields } = parsed;
   const errors = [];
   const missing = checkRequired(fields, AGENT_REQUIRED);
   if (missing.length) errors.push(`missing required: ${missing.join(", ")}`);
@@ -103,12 +77,13 @@ async function lintSkill(skillDir) {
     console.log(`  ✗ ${rel(fullPath)} — SKILL.md not found`);
     return;
   }
-  const fields = parseFrontmatter(content);
-  if (!fields) {
+  const parsed = parseFrontmatter(content);
+  if (!parsed) {
     failures.push({ file: rel(fullPath), errors: ["no frontmatter block"] });
     console.log(`  ✗ ${rel(fullPath)} — no frontmatter`);
     return;
   }
+  const { fields } = parsed;
   const errors = [];
   const missing = checkRequired(fields, SKILL_REQUIRED);
   if (missing.length) errors.push(`missing required: ${missing.join(", ")}`);
