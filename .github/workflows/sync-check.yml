@@ -1,0 +1,44 @@
+name: sync-check
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+
+jobs:
+  sync-determinism:
+    name: Sync determinism
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Run sync
+        run: npm run sync
+
+      - name: Verify no drift
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "Generated harness directories drift from source."
+            echo "Run 'npm run sync' locally and commit the regenerated files."
+            git status --short
+            git --no-pager diff
+            exit 1
+          fi
+
+  frontmatter-lint:
+    name: Frontmatter lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Lint frontmatter
+        run: npm run lint
