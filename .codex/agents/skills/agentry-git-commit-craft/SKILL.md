@@ -1,0 +1,91 @@
+---
+name: agentry-git-commit-craft
+description: Produces commit messages that follow conventional commits and explain not just what changed but why. Invoke when writing a commit message for any meaningful change. Skip for trivial fixes (typos, version bumps, mechanical reformatting) where a one-line subject suffices.
+---
+
+# Git commit craft
+
+A good commit message is small effort that pays back every time someone runs `git log` or `git blame`. The failure mode this prevents: messages like "fix stuff," "updates," or "WIP" that force future readers to read the entire diff to figure out what the author was thinking. The audience is the developer reading history six months from now — sometimes that developer is you.
+
+## When to invoke
+
+- Any commit that adds, changes, or removes behavior — bug fix, feature, refactor, performance change.
+- A commit a future developer might need to understand from `git log` alone, without the context of the PR.
+- A commit that touches code with non-obvious motivation (a workaround, a constraint compromise, a change driven by external factors).
+- When a PR contains multiple logical changes that should be separate commits — invoke the skill once per commit.
+
+## When NOT to invoke (a one-line subject is enough)
+
+- Trivial typo fixes: `docs: fix typo in README`.
+- Version bumps: `chore: bump version to 0.2.0`.
+- Mechanical changes obviously self-explanatory from the diff: `chore: format with prettier`.
+- Generated file regenerations after a source change, when the source change has its own message: `chore: regenerate harness directories`.
+
+If the change is trivial, recommend a one-line subject and skip the body. Forcing a paragraph onto a typo fix is noise.
+
+## The format
+
+```
+<type>(<scope>): <subject>
+
+<body — why this change exists, not what it does>
+
+<footer — refs, breaking changes>
+```
+
+- **Type.** One of: `feat`, `fix`, `refactor`, `docs`, `chore`, `test`, `perf`, `ci`, `build`, `style`, `revert`. Pick the one that best describes the dominant effect of the change.
+- **Scope.** Optional, parenthesized — the area touched (`auth`, `api`, `db`, `cli`). Skip if the change spans many areas.
+- **Subject.** Imperative mood (`add login flow`, not `added login flow` or `adds login flow`). Lowercase, no trailing period, target ≤70 characters.
+- **Body.** Explains WHY. Names the problem the change solves, not the lines it touches — the diff already shows the lines. Wrap at ~72 characters per line. Skip the body if the subject is self-sufficient.
+- **Footer.** Optional. `Refs: #123` to link an issue without closing it. `Closes: #456` to close on merge. `BREAKING CHANGE: <description>` for breaking changes.
+
+## Examples
+
+A weak message — meaningless to a future reader:
+
+```
+fix: stuff
+```
+
+A reasonable subject-only message for a small bug fix:
+
+```
+fix: handle null user in profile renderer
+```
+
+A good message for a change with non-obvious motivation:
+
+```
+fix(profile): handle null user in renderer
+
+The profile renderer assumed `user.preferences` was always present,
+which broke for accounts created before the preferences column was
+added. Falls back to default preferences when the field is missing,
+preserving existing behavior for new accounts.
+
+Refs: #1247
+```
+
+The body earned its place by explaining the constraint (legacy accounts without the column) that is invisible in the diff.
+
+## One commit, one logical change
+
+If the diff does two things — a refactor and a feature — split into two commits. The test: can you describe the commit in a single sentence without using "and"? If not, the commit is doing too much. Split before writing the message.
+
+This is not always feasible mid-stream. If a refactor and a feature got entangled during development, untangle them at commit time with `git add -p` and separate commits. The history is the deliverable, not the working tree's accidents.
+
+## Subject-line rules in detail
+
+- **Imperative mood completes the sentence** "If applied, this commit will…" — "add login flow" works; "added login flow" does not.
+- **Subject is the change, not the diff.** "validate token expiration before issuing session" describes what changed; "modify 5 lines in auth.ts" describes the diff.
+- **No trailing period.** It is a header, not a sentence.
+- **Length matters.** Most tools truncate at 50–72 characters. Long subjects get cut off in `git log --oneline` and PR lists.
+
+## Anti-patterns
+
+- `WIP` or `temp` commits in main. Squash before merging or rebase them out.
+- Mixing a refactor with a behavior change in one commit. Split.
+- Subject lines that describe the diff ("changed 5 lines in auth.ts") instead of the change ("validate token expiration before issuing session").
+- Pasting stack traces or error output into the body. Link to an issue instead; the body explains the fix, not the symptom.
+- Past tense in the subject. Conventional commits use imperative because the convention assumes the sentence "If applied, this commit will…" — past tense breaks it.
+- Generic verbs that hide the change. "Update auth" tells the reader nothing; "validate token expiration before issuing session" tells them everything.
