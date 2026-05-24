@@ -11,12 +11,14 @@
   .\scripts\install.ps1 -Target claude
   .\scripts\install.ps1 -Target claude -Project
   .\scripts\install.ps1 -Target cursor
+  .\scripts\install.ps1 -Target codex
+  .\scripts\install.ps1 -Target codex -Project
   .\scripts\install.ps1 -Target claude -Uninstall
 #>
 
 [CmdletBinding()]
 param(
-  [ValidateSet('claude','cursor')]
+  [ValidateSet('claude','cursor','codex')]
   [string]$Target,
 
   [switch]$User,
@@ -36,9 +38,10 @@ Usage: install.ps1 -Target <name> [-User|-Project] [-Uninstall] [-Help]
 Targets:
   claude    Claude Code config (default scope: -User)
   cursor    Cursor project config (default scope: -Project)
+  codex     Codex skills (default scope: -User)
 
 Flags:
-  -User         Install to user-level location (claude only)
+  -User         Install to user-level location (claude, codex)
   -Project      Install to current working directory's project location
   -Uninstall    Remove agentry-installed files instead of copying
   -Help         Show this help and exit
@@ -47,6 +50,8 @@ Examples:
   .\scripts\install.ps1 -Target claude
   .\scripts\install.ps1 -Target claude -Project
   .\scripts\install.ps1 -Target cursor
+  .\scripts\install.ps1 -Target codex
+  .\scripts\install.ps1 -Target codex -Project
   .\scripts\install.ps1 -Target claude -Uninstall
 '@ | Write-Host
 }
@@ -68,7 +73,7 @@ $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 
 $Scope = if ($User) { 'user' }
          elseif ($Project) { 'project' }
-         elseif ($Target -eq 'claude') { 'user' }
+         elseif ($Target -eq 'claude' -or $Target -eq 'codex') { 'user' }
          else { 'project' }
 
 if ($Target -eq 'cursor' -and $Scope -eq 'user') {
@@ -83,11 +88,22 @@ if ($Target -eq 'claude') {
   } else {
     Join-Path (Get-Location).Path '.claude'
   }
-  $SubDirs = @('agents','skills','commands')
-} else {
+  $SubDirs = @('agents','skills','commands','rules')
+} elseif ($Target -eq 'cursor') {
   $SrcDir = Join-Path $RepoRoot '.cursor'
   $DestDir = Join-Path (Get-Location).Path '.cursor'
   $SubDirs = @('agents','rules')
+} else {
+  # codex: skills live under .agents\skills\ at the destination. The src path
+  # points at .codex\agents (one level above the skills\ subdir), so the
+  # generic loop below works: srcSub = SrcDir\skills, destSub = DestDir\skills.
+  $SrcDir = Join-Path $RepoRoot '.codex\agents'
+  $DestDir = if ($Scope -eq 'user') {
+    Join-Path $env:USERPROFILE '.agents'
+  } else {
+    Join-Path (Get-Location).Path '.agents'
+  }
+  $SubDirs = @('skills')
 }
 
 if (-not (Test-Path -LiteralPath $SrcDir -PathType Container)) {
