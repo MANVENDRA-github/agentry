@@ -171,6 +171,60 @@ End with a one-line summary: how many findings, and whether the document is read
 
 That is the whole file. Copy the shape, replace the content.
 
+## Authoring a rule
+
+A rule is a focused piece of guidance that should apply when the developer is working in a specific context — usually a specific language (`typescript`, `python`, `go`) but sometimes a topic (`security`, `performance`). Rules differ from skills in two ways:
+
+- **Triggered by context, not user intent.** Skills get invoked because the user is doing something the skill helps with (TDD, debugging). Rules apply because the user is working in a specific context (TypeScript files, a security-sensitive area). The harness — not the user — decides when the rule kicks in.
+- **Smaller in scope per file.** A skill is a multi-step protocol. A rule is one tight piece of guidance ("use strict mode," "narrow types at API boundaries," "log structured errors"). One rule per file; one concern per rule.
+
+The v0.3 pattern proof ships one rule: `rules/typescript/strict-mode.md`. Read it as the reference for length, depth, and voice before authoring your own.
+
+### 1. Create the file
+
+```
+rules/<category>/<rule-name>.md
+```
+
+The category is usually a language identifier (`typescript`, `python`, `go`) but may be a topic (`security`, `performance`) for non-language rules. The nesting establishes a namespace so rule names do not collide across categories. Use kebab-case for the rule name.
+
+### 2. Frontmatter
+
+```yaml
+---
+name: <rule-name>
+description: <when this rule applies, what it covers>
+language: <language identifier>   # optional, used by Cursor for context targeting
+---
+```
+
+- `name` — must match the filename (without `.md`).
+- `description` — names the trigger condition and the skip conditions, same discipline as skills. ≥20 characters.
+- `language` — optional. Present for language-specific rules; absent for topic rules. v0.3 does not yet derive Cursor globs from this field, but the field is preserved for forward compatibility.
+
+### 3. Body
+
+Same voice as skills: imperative, second person, concrete over abstract. The rule's body applies *in* a specific context, but the body itself should not include code samples — every example costs tokens on every invocation, and a rule that says "prefer X over Y" lands better than one that pastes 10 lines of sample code.
+
+Length: roughly 40–80 lines including frontmatter. Smaller than skills because a rule covers one concern.
+
+### 4. Per-harness behavior
+
+- **Claude Code:** copied verbatim to `.claude/rules/<category>/<rule-name>.md`. Available in the install location; CLAUDE.md can reference it explicitly.
+- **Cursor:** transformed to `.cursor/rules/<category>/<rule-name>.mdc` with `alwaysApply: false` added by `toCursorRule`. Opt-in for v0.3; a future enhancement can derive globs from `language` for auto-apply.
+- **Codex:** skipped in v0.3 — Codex has its own rules concept and the mapping needs dedicated investigation. Deferred to v0.4.
+
+### 5. Sync, verify, lint, commit
+
+```bash
+npm run sync
+ls .claude/rules/<category>/<rule-name>.md       # should exist
+ls .cursor/rules/<category>/<rule-name>.mdc      # should exist
+npm run lint                                     # should pass
+git add rules/<category>/<rule-name>.md .claude/rules/<category>/<rule-name>.md .cursor/rules/<category>/<rule-name>.mdc
+git commit -m "feat: add <category>/<rule-name> rule"
+```
+
 ## Anti-patterns to avoid
 
 - **Vague descriptions** like "for code review" or "helps with testing." The harness invocation system needs a sharper trigger than this.
