@@ -12,6 +12,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { toCursorRule } from "./cursor-transform.js";
+import { renameSkill, agentToSkill } from "./codex-transform.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, "..");
@@ -20,11 +22,12 @@ const SOURCES = {
   agents: path.join(REPO_ROOT, "agents"),
   skills: path.join(REPO_ROOT, "skills"),
   commands: path.join(REPO_ROOT, "commands"),
+  rules: path.join(REPO_ROOT, "rules"),
 };
 
 // --- CLI parsing -----------------------------------------------------------
 
-const ALL_TARGETS = ["claude", "cursor"];
+const ALL_TARGETS = ["claude", "cursor", "codex"];
 let DRY_RUN = false;
 let TARGETS = [...ALL_TARGETS];
 const UNKNOWN_TARGETS = [];
@@ -121,26 +124,6 @@ async function copyTree(srcDir, destDir) {
   }
 }
 
-// --- Cursor skill transform ------------------------------------------------
-
-// Source skills use Claude-style frontmatter (name, description). Cursor's
-// closest primitive is a .mdc rule; we add `alwaysApply: false` so the rule
-// is available on-demand but not auto-injected. This is a v0.1 approximation —
-// Cursor has no first-class skill concept and the semantics differ slightly.
-function toCursorRule(content) {
-  const fmMatch = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/);
-  if (!fmMatch) {
-    return `---\nalwaysApply: false\n---\n\n${content}`;
-  }
-  const frontmatter = fmMatch[1];
-  const body = content.slice(fmMatch[0].length);
-  const hasAlwaysApply = /^\s*alwaysApply\s*:/m.test(frontmatter);
-  const newFrontmatter = hasAlwaysApply
-    ? frontmatter
-    : `${frontmatter}\nalwaysApply: false`;
-  return `---\n${newFrontmatter}\n---\n${body.startsWith("\n") ? "" : "\n"}${body}`;
-}
-
 // --- Adapters --------------------------------------------------------------
 
 /**
@@ -156,6 +139,7 @@ async function syncClaude() {
   await rmGenerated(path.join(claudeDir, "agents"));
   await rmGenerated(path.join(claudeDir, "skills"));
   await rmGenerated(path.join(claudeDir, "commands"));
+  await rmGenerated(path.join(claudeDir, "rules"));
 
   // agents/<name>.md -> .claude/agents/<name>.md
   for (const entry of await readDirSafe(SOURCES.agents)) {
@@ -187,9 +171,26 @@ async function syncClaude() {
     }
   }
 
+  // rules/<category>/<name>.md -> .claude/rules/<category>/<name>.md
+  // Copied verbatim. Claude Code does not yet auto-apply rules by context;
+  // they are made available in the install location for users (or for
+  // CLAUDE.md to reference) and will work cleanly if auto-application lands.
+  for (const category of await readDirSafe(SOURCES.rules)) {
+    if (!category.isDirectory()) continue;
+    const srcCategoryDir = path.join(SOURCES.rules, category.name);
+    for (const entry of await readDirSafe(srcCategoryDir)) {
+      if (entry.isFile() && entry.name.endsWith(".md")) {
+        await copyFile(
+          path.join(srcCategoryDir, entry.name),
+          path.join(claudeDir, "rules", category.name, entry.name),
+        );
+      }
+    }
+  }
+
   const manifest = {
     name: "agentry",
-    version: "0.2.0",
+    version: "0.3.0",
     description:
       "Author your AI coding agents and skills once. Sync them to every harness you use.",
     author: "MANVENDRA-github",
@@ -232,9 +233,97 @@ async function syncCursor() {
     const source = await fs.readFile(srcSkill, "utf8");
     await writeFile(dest, toCursorRule(source));
   }
+
+  // rules/<category>/<name>.md -> .cursor/rules/<category>/<name>.mdc
+  // Language rules nest under their category. They use the same toCursorRule
+  // transform as skills — `alwaysApply: false` keeps them opt-in for v0.3.
+  // (A future enhancement can derive `globs` from the `language` field for
+  // context-triggered auto-apply.) Cursor discovers .mdc files recursively
+  // inside .cursor/rules/.
+  for (const category of await readDirSafe(SOURCES.rules)) {
+    if (!category.isDirectory()) continue;
+    const srcCategoryDir = path.join(SOURCES.rules, category.name);
+    for (const entry of await readDirSafe(srcCategoryDir)) {
+      if (!entry.isFile() || !entry.name.endsWith(".md")) continue;
+      const destName = entry.name.replace(/\.md$/, ".mdc");
+      const dest = path.join(cursorDir, "rules", category.name, destName);
+      if (DRY_RUN) {
+        console.log(`  [dry] ${rel(dest)}`);
+        continue;
+      }
+      const source = await fs.readFile(path.join(srcCategoryDir, entry.name), "utf8");
+      await writeFile(dest, toCursorRule(source));
+    }
+  }
 }
 
-const ADAPTERS = { claude: syncClaude, cursor: syncCursor };
+/**
+ * Sync into .codex/. Source skills are copied near-verbatim (only the `name`
+ * field is rewritten to `agentry-<name>` for collision avoidance). Source
+ * agents are converted into Codex skills — Codex has no markdown-agent
+ * primitive that matches Claude Code's, so each agent becomes a skill with
+ * `tools` and `model` dropped (see codex-transform.js).
+ *
+ * Commands are skipped. Codex does not support user-extensible slash
+ * commands; the closest equivalent is `$skill-name` invocation, which the
+ * converted skills already provide.
+ *
+ * Rules are skipped in v0.3. Codex has its own rules concept that needs
+ * dedicated investigation; the mapping is deferred to v0.4.
+ *
+ * Only .codex/agents/skills/ is wiped on sync. The parent .codex/ directory
+ * may hold Codex's per-user state (e.g. config.toml) and must be preserved —
+ * same pattern as syncClaude's partial wipe.
+ */
+async function syncCodex() {
+  console.log("\n[codex]");
+  const codexSkillsDir = path.join(REPO_ROOT, ".codex", "agents", "skills");
+  await rmGenerated(codexSkillsDir);
+
+  // skills/<name>/SKILL.md -> .codex/agents/skills/agentry-<name>/SKILL.md
+  // (plus any sibling files/dirs the source skill bundles).
+  for (const entry of await readDirSafe(SOURCES.skills)) {
+    if (!entry.isDirectory()) continue;
+    const srcSkillDir = path.join(SOURCES.skills, entry.name);
+    const srcSkillFile = path.join(srcSkillDir, "SKILL.md");
+    if (!(await exists(srcSkillFile))) continue;
+    const prefixed = `agentry-${entry.name}`;
+    const destSkillDir = path.join(codexSkillsDir, prefixed);
+    const destSkillFile = path.join(destSkillDir, "SKILL.md");
+    if (DRY_RUN) {
+      console.log(`  [dry] ${rel(destSkillFile)}`);
+    } else {
+      const source = await fs.readFile(srcSkillFile, "utf8");
+      await writeFile(destSkillFile, renameSkill(source, prefixed));
+    }
+    // Copy any sibling files/directories alongside SKILL.md verbatim.
+    for (const sibling of await readDirSafe(srcSkillDir)) {
+      if (sibling.name === "SKILL.md") continue;
+      const src = path.join(srcSkillDir, sibling.name);
+      const dest = path.join(destSkillDir, sibling.name);
+      if (sibling.isDirectory()) {
+        await copyTree(src, dest);
+      } else if (sibling.isFile()) {
+        await copyFile(src, dest);
+      }
+    }
+  }
+
+  // agents/<name>.md -> .codex/agents/skills/agentry-<name>/SKILL.md
+  for (const entry of await readDirSafe(SOURCES.agents)) {
+    if (!entry.isFile() || !entry.name.endsWith(".md")) continue;
+    const prefixed = `agentry-${entry.name.replace(/\.md$/, "")}`;
+    const destSkillFile = path.join(codexSkillsDir, prefixed, "SKILL.md");
+    if (DRY_RUN) {
+      console.log(`  [dry] ${rel(destSkillFile)}`);
+      continue;
+    }
+    const source = await fs.readFile(path.join(SOURCES.agents, entry.name), "utf8");
+    await writeFile(destSkillFile, agentToSkill(source, prefixed));
+  }
+}
+
+const ADAPTERS = { claude: syncClaude, cursor: syncCursor, codex: syncCodex };
 
 // --- main ------------------------------------------------------------------
 
