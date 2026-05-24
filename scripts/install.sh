@@ -9,6 +9,8 @@
 #   ./scripts/install.sh --target claude              # install to ~/.claude/
 #   ./scripts/install.sh --target claude --project    # install to ./.claude/
 #   ./scripts/install.sh --target cursor              # install to ./.cursor/
+#   ./scripts/install.sh --target codex               # install to ~/.agents/skills/
+#   ./scripts/install.sh --target codex --project    # install to ./.agents/skills/
 #   ./scripts/install.sh --target claude --uninstall  # remove installed files
 #   ./scripts/install.sh --help
 
@@ -30,9 +32,10 @@ Usage: install.sh --target <name> [--user|--project] [--uninstall] [--help]
 Targets:
   claude    Claude Code config (default scope: --user)
   cursor    Cursor project config (default scope: --project)
+  codex     Codex skills (default scope: --user)
 
 Flags:
-  --user        Install to user-level location (claude only)
+  --user        Install to user-level location (claude, codex)
   --project     Install to current working directory's project location
   --uninstall   Remove agentry-installed files instead of copying
   --help, -h    Show this help and exit
@@ -41,6 +44,8 @@ Examples:
   ./scripts/install.sh --target claude
   ./scripts/install.sh --target claude --project
   ./scripts/install.sh --target cursor
+  ./scripts/install.sh --target codex
+  ./scripts/install.sh --target codex --project
   ./scripts/install.sh --target claude --uninstall
 EOF
 }
@@ -78,9 +83,9 @@ if [[ -z "$TARGET" ]]; then
 fi
 
 case "$TARGET" in
-  claude|cursor) ;;
+  claude|cursor|codex) ;;
   *)
-    echo "Error: unknown target '$TARGET'. Valid: claude, cursor" >&2
+    echo "Error: unknown target '$TARGET'. Valid: claude, cursor, codex" >&2
     exit 1
     ;;
 esac
@@ -94,7 +99,7 @@ if [[ $USER_FLAG -eq 1 ]]; then
   SCOPE="user"
 elif [[ $PROJECT_FLAG -eq 1 ]]; then
   SCOPE="project"
-elif [[ "$TARGET" == "claude" ]]; then
+elif [[ "$TARGET" == "claude" || "$TARGET" == "codex" ]]; then
   SCOPE="user"
 else
   SCOPE="project"
@@ -112,11 +117,22 @@ if [[ "$TARGET" == "claude" ]]; then
   else
     DEST_DIR="$PWD/.claude"
   fi
-  SUBDIRS=("agents" "skills" "commands")
-else
+  SUBDIRS=("agents" "skills" "commands" "rules")
+elif [[ "$TARGET" == "cursor" ]]; then
   SRC_DIR="$REPO_ROOT/.cursor"
   DEST_DIR="$PWD/.cursor"
   SUBDIRS=("agents" "rules")
+else
+  # codex: skills live under .agents/skills/ at the destination. The src path
+  # points at .codex/agents (one level above the skills/ subdir), so the
+  # generic loop below works: src_sub = SRC_DIR/skills, dest_sub = DEST_DIR/skills.
+  SRC_DIR="$REPO_ROOT/.codex/agents"
+  if [[ "$SCOPE" == "user" ]]; then
+    DEST_DIR="$HOME/.agents"
+  else
+    DEST_DIR="$PWD/.agents"
+  fi
+  SUBDIRS=("skills")
 fi
 
 if [[ ! -d "$SRC_DIR" ]]; then

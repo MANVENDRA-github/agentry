@@ -14,6 +14,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { parseFrontmatter } from "./frontmatter.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, "..");
@@ -40,18 +41,6 @@ async function exists(p) {
 async function readDirSafe(p) {
   try { return await fs.readdir(p, { withFileTypes: true }); }
   catch { return []; }
-}
-
-function parseFrontmatter(content) {
-  const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?/);
-  if (!match) return null;
-  const fields = {};
-  for (const line of match[1].split(/\r?\n/)) {
-    const m = line.match(/^([A-Za-z][A-Za-z0-9_-]*)\s*:\s*(.*)$/);
-    if (!m) continue;
-    fields[m[1]] = m[2].trim();
-  }
-  return fields;
 }
 
 function validateFields(fields, required, expectedName) {
@@ -123,8 +112,8 @@ console.log("\nFrontmatter:");
 for (const file of agentFiles) {
   const full = path.join(REPO_ROOT, "agents", file);
   const content = await fs.readFile(full, "utf8");
-  const fields = parseFrontmatter(content);
-  const errors = validateFields(fields, AGENT_REQUIRED, file.replace(/\.md$/, ""));
+  const parsed = parseFrontmatter(content);
+  const errors = validateFields(parsed?.fields ?? null, AGENT_REQUIRED, file.replace(/\.md$/, ""));
   if (errors.length) bad(`${rel(full)} — ${errors.join("; ")}`);
   else ok(`${rel(full)} — valid`);
 }
@@ -136,8 +125,8 @@ for (const skill of skillDirs) {
     bad(`${rel(full)} — SKILL.md not found`);
     continue;
   }
-  const fields = parseFrontmatter(content);
-  const errors = validateFields(fields, SKILL_REQUIRED, skill);
+  const parsed = parseFrontmatter(content);
+  const errors = validateFields(parsed?.fields ?? null, SKILL_REQUIRED, skill);
   if (errors.length) bad(`${rel(full)} — ${errors.join("; ")}`);
   else ok(`${rel(full)} — valid`);
 }

@@ -18,7 +18,7 @@ ECC is excellent if you want a maximalist all-in-one — hundreds of skills, doz
 
 ## Status
 
-**v0.2.0.** Two harness adapters (Claude Code, Cursor). Four agents (`code-reviewer`, `planner`, `debugger`, `pr-describer`). Five skills (`tdd-workflow`, `session-handoff`, `git-commit-craft`, `error-debugging`, `code-review`). Five Claude Code slash commands (`/plan`, `/review`, `/debug`, `/commit`, `/handoff`). Content grows with use, not with speculation — every component still has to earn its place.
+**v0.3.0.** Three harness adapters (Claude Code, Cursor, Codex). Four agents (`code-reviewer`, `planner`, `debugger`, `pr-describer`). Five skills (`tdd-workflow`, `session-handoff`, `git-commit-craft`, `error-debugging`, `code-review`). Five Claude Code slash commands (`/plan`, `/review`, `/debug`, `/commit`, `/handoff`). One TypeScript rule (`strict-mode`) as a pattern proof for language-specific content. Content grows with use, not with speculation — every component still has to earn its place.
 
 ## Install
 
@@ -26,14 +26,18 @@ ECC is excellent if you want a maximalist all-in-one — hundreds of skills, doz
 git clone https://github.com/MANVENDRA-github/agentry.git
 cd agentry
 npm install
-npm run sync          # generate harness-specific directories
-./scripts/install.sh --target claude    # or: --target cursor
+npm run sync                                       # generate harness-specific directories
+./scripts/install.sh --target claude               # or: --target cursor
+./scripts/install.sh --target codex --user         # install to ~/.agents/skills/
+./scripts/install.sh --target codex --project      # install to <project>/.agents/skills/
 ```
 
 Windows users:
 
 ```powershell
-.\scripts\install.ps1 -Target claude    # or: -Target cursor
+.\scripts\install.ps1 -Target claude               # or: -Target cursor
+.\scripts\install.ps1 -Target codex -User
+.\scripts\install.ps1 -Target codex -Project
 ```
 
 The installer copies generated files into the target harness's expected location (e.g. `~/.claude/` for Claude Code). Run `--target` once per harness you use.
@@ -56,10 +60,12 @@ The installer copies generated files into the target harness's expected location
 | Command | `/debug` | Slash-command wrapper for the `debugger` agent. |
 | Command | `/commit` | Slash-command wrapper for the `git-commit-craft` skill. |
 | Command | `/handoff` | Slash-command wrapper for the `session-handoff` skill. |
+| Rule | `typescript/strict-mode` | TypeScript strict mode discipline. Available to Claude Code (verbatim copy) and Cursor (as `.mdc` rule with `alwaysApply: false`). Codex rules support deferred to v0.4. |
 | Harness adapter | Claude Code | Generates `.claude/` directory with agent, skill, and command files, plus the `.claude-plugin/plugin.json` manifest. |
 | Harness adapter | Cursor | Generates `.cursor/` directory with `.mdc` rules format. Commands are not synced — Cursor has no equivalent primitive. |
+| Harness adapter | Codex | Generates `.codex/agents/skills/agentry-*/` skill directories. agentry agents are installed as Codex skills (approximation — Codex has no markdown-agent primitive). Commands are skipped (no Codex slash-command primitive). Installs to `~/.agents/skills/` or `<project>/.agents/skills/`. |
 
-Commands are a Claude Code-only feature today. Cursor has no equivalent slash-command system, so the sync engine skips them for that target. Cursor users still get every agent and skill — only the thin command wrappers are unavailable, and the underlying agents can be invoked directly without them.
+Commands are a Claude Code-only feature today. Cursor and Codex have no equivalent slash-command system, so the sync engine skips them for those targets. Cursor and Codex users still get every agent and skill — only the thin command wrappers are unavailable, and the underlying agents can be invoked directly without them.
 
 ## How agentry works
 
@@ -86,14 +92,15 @@ Body of the skill — instructions the agent will follow when this skill is invo
 
 Drop it in `skills/my-skill/SKILL.md`, run `npm run sync`, and it appears in every harness you target. Agents follow a similar pattern under `agents/`.
 
-See [`docs/authoring.md`](docs/authoring.md) for the full authoring guide, and [`docs/architecture.md`](docs/architecture.md) for how the sync engine and harness adapters fit together.
+See [`docs/authoring.md`](docs/authoring.md) for the full authoring guide, [`docs/architecture.md`](docs/architecture.md) for how the sync engine and harness adapters fit together, and [`docs/decisions.md`](docs/decisions.md) for the design decisions and trade-offs behind agentry's shape.
 
 ## Roadmap
 
 - **v0.1** ✓ shipped: foundation. Two harness adapters, one agent, one skill, minimal install.
 - **v0.2** ✓ shipped: three more agents, four more skills, five Claude Code commands, CI workflow, `doctor` and `lint` scripts, contributor and authoring docs.
-- **v0.3**: additional harnesses (Codex, OpenCode, Zed, Antigravity), language-specific rule packs, hooks, marketplace listing.
-- **v0.4+**: more content as use surfaces real needs.
+- **v0.3** ✓ shipped: Codex CLI as a third harness adapter, the `rules/` source-directory pattern proven with one TypeScript rule (`strict-mode`), and module extraction plus 47 unit tests covering the transform layer.
+- **v0.4**: additional harnesses (OpenCode, Zed, Antigravity), expanded language-specific rule packs, hooks, marketplace listing, Codex rules support, Cursor `globs`-based auto-apply for language rules.
+- **v0.5+**: more content as use surfaces real needs.
 
 ## License
 
