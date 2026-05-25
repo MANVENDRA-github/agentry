@@ -49,6 +49,14 @@ const UNKNOWN_TARGETS = [];
   }
 }
 
+/**
+ * Split a comma-separated `--target` value into known targets, pushing any
+ * unrecognized names onto the module-level `UNKNOWN_TARGETS` array so they
+ * can be reported once at the start of `main()`.
+ *
+ * @param {string} value
+ * @returns {string[]} the valid subset of requested targets
+ */
 function parseTargets(value) {
   const requested = value.split(",").map((s) => s.trim()).filter(Boolean);
   const valid = [];
