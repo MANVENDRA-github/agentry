@@ -18,7 +18,7 @@ ECC is excellent if you want a maximalist all-in-one — hundreds of skills, doz
 
 ## Status
 
-**v0.3.0.** Three harness adapters (Claude Code, Cursor, Codex). Four agents (`code-reviewer`, `planner`, `debugger`, `pr-describer`). Five skills (`tdd-workflow`, `session-handoff`, `git-commit-craft`, `error-debugging`, `code-review`). Five Claude Code slash commands (`/plan`, `/review`, `/debug`, `/commit`, `/handoff`). One TypeScript rule (`strict-mode`) as a pattern proof for language-specific content. Content grows with use, not with speculation — every component still has to earn its place.
+**v0.4.0.** Three harness adapters (Claude Code, Cursor, Codex). Six agents (`code-reviewer`, `planner`, `debugger`, `pr-describer`, `refactorer`, `doc-writer`). Six skills (`tdd-workflow`, `session-handoff`, `git-commit-craft`, `error-debugging`, `code-review`, `test-writing`). Seven Claude Code slash commands (`/plan`, `/review`, `/debug`, `/commit`, `/handoff`, `/refactor`, `/document`). One TypeScript rule (`strict-mode`) as a pattern proof for language-specific content. Content grows with use, not with speculation — every component still has to earn its place.
 
 ## Install
 
