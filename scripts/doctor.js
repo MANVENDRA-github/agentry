@@ -43,6 +43,18 @@ async function readDirSafe(p) {
   catch { return []; }
 }
 
+/**
+ * Validate parsed frontmatter against doctor's checks: required fields present,
+ * `name` matches the expected value (filename or directory name), description
+ * present and ≥ MIN_DESCRIPTION_LEN. Doctor has its own validator (rather than
+ * reusing frontmatter.js's checkRequired/checkDescription) so the output format
+ * matches the doctor report style.
+ *
+ * @param {Object | null} fields - parseFrontmatter's `fields`, or null if no block.
+ * @param {string[]} required - field names that must be present and non-empty.
+ * @param {string} expectedName - the value `fields.name` must equal.
+ * @returns {string[]} error messages, one per problem; empty if valid.
+ */
 function validateFields(fields, required, expectedName) {
   if (!fields) return ["no frontmatter block"];
   const errors = [];

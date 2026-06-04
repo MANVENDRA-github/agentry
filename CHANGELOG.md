@@ -4,6 +4,27 @@ All notable changes to agentry are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] — code creation and maintenance content
+
+Curated content filling the creation and maintenance half of the workflow — restructuring existing code, writing documentation, and adding tests to code that already exists. No infrastructure changes.
+
+### Added
+
+**Agents:**
+- `refactorer` — restructures existing code without changing its behavior; the actor counterpart to `code-reviewer`.
+- `doc-writer` — writes and maintains documentation, keeping it accurate to the code.
+
+**Skills:**
+- `test-writing` — adds tests to existing untested code, characterizing current behavior. Distinct from `tdd-workflow`, which drives new code test-first.
+
+**Commands** (Claude Code only):
+- `/refactor`, `/document` — slash-command wrappers for the two new agents.
+
+### Changed
+
+- README "What's inside" table expanded with the new agents, skill, and commands.
+- Plugin manifest version bumped to `0.4.0`.
+
 ## [0.3.0] — Codex adapter, rules pattern, and test coverage
 
 ### Added

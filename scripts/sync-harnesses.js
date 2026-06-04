@@ -49,6 +49,14 @@ const UNKNOWN_TARGETS = [];
   }
 }
 
+/**
+ * Split a comma-separated `--target` value into known targets, pushing any
+ * unrecognized names onto the module-level `UNKNOWN_TARGETS` array so they
+ * can be reported once at the start of `main()`.
+ *
+ * @param {string} value
+ * @returns {string[]} the valid subset of requested targets
+ */
 function parseTargets(value) {
   const requested = value.split(",").map((s) => s.trim()).filter(Boolean);
   const valid = [];
@@ -190,7 +198,7 @@ async function syncClaude() {
 
   const manifest = {
     name: "agentry",
-    version: "0.3.0",
+    version: "0.4.0",
     description:
       "Author your AI coding agents and skills once. Sync them to every harness you use.",
     author: "MANVENDRA-github",
