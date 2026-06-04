@@ -50,16 +50,21 @@ The installer copies generated files into the target harness's expected location
 | Agent | `planner` | Produces an implementation plan before any code is written. |
 | Agent | `debugger` | Hypothesis-driven root-cause investigation in fresh context. |
 | Agent | `pr-describer` | Generates a PR description from a diff. |
+| Agent | `refactorer` | Restructures existing code without changing behavior — extract, rename, dedupe, simplify. |
+| Agent | `doc-writer` | Writes and maintains documentation — READMEs, API references, inline comments, guides. |
 | Skill | `tdd-workflow` | Test-first development with explicit red-green-refactor loops. |
 | Skill | `session-handoff` | Structured handoff notes for resuming work in a fresh session. |
 | Skill | `git-commit-craft` | Conventional commits with the motivation written down, not just the diff. |
 | Skill | `error-debugging` | In-conversation debugging discipline (companion to the `debugger` agent). |
 | Skill | `code-review` | Self-review before handing off to another reviewer (companion to the `code-reviewer` agent). |
+| Skill | `test-writing` | Adds tests to existing untested code (distinct from `tdd-workflow`'s test-first methodology). |
 | Command | `/plan` | Slash-command wrapper for the `planner` agent. |
 | Command | `/review` | Slash-command wrapper for the `code-reviewer` agent. |
 | Command | `/debug` | Slash-command wrapper for the `debugger` agent. |
 | Command | `/commit` | Slash-command wrapper for the `git-commit-craft` skill. |
 | Command | `/handoff` | Slash-command wrapper for the `session-handoff` skill. |
+| Command | `/refactor` | Slash-command wrapper for the `refactorer` agent. |
+| Command | `/document` | Slash-command wrapper for the `doc-writer` agent. |
 | Rule | `typescript/strict-mode` | TypeScript strict mode discipline. Available to Claude Code (verbatim copy) and Cursor (as `.mdc` rule with `alwaysApply: false`). Codex rules support deferred to v0.4. |
 | Harness adapter | Claude Code | Generates `.claude/` directory with agent, skill, and command files, plus the `.claude-plugin/plugin.json` manifest. |
 | Harness adapter | Cursor | Generates `.cursor/` directory with `.mdc` rules format. Commands are not synced — Cursor has no equivalent primitive. |
