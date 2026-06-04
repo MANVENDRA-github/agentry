@@ -1,0 +1,58 @@
+---
+name: test-writing
+description: Writes tests for code that already exists and is untested — characterize and protect current behavior so future changes are safe. Use this for adding coverage to existing code; use tdd-workflow when writing new code test-first.
+alwaysApply: false
+---
+
+# Test writing
+
+Adding tests to code that already exists and has none — or too few. The goal is to characterize and protect current behavior: capture what the code does now so that future changes can be made without silently breaking it, and so that refactoring becomes possible at all.
+
+## When to use this skill (and when not to)
+
+Use **test-writing** when you have existing, untested or under-tested code and need to add coverage to it. The code already runs, or is about to; you are pinning down its behavior after the fact.
+
+Use **`tdd-workflow` instead** when you are writing new code and can write the test first. That is a different task: TDD drives the design of code that does not exist yet. This skill protects code that already does.
+
+If you find yourself writing a test for behavior that isn't implemented yet, stop — you have crossed into TDD, and that skill is the right tool. Here, the code comes first and the test describes what it already does.
+
+## The goal
+
+Characterize and protect. The tests you write should capture what the code actually does today — not what it was supposed to do, not what it ideally should do. If the current behavior is surprising or arguably wrong, the test still captures it as-is, with a note flagging the oddity. The point is a safety net for change, not a correctness audit. Fixing questionable behavior is a separate task — one the tests then make safe to attempt.
+
+## The approach
+
+1. Understand what the code does. Read it. Trace the paths — inputs, branches, outputs, side effects, errors. You cannot characterize behavior you have not followed end to end.
+2. Identify the behaviors worth testing. Work from the public contract: what callers rely on, not how it happens to be implemented.
+3. Write tests that capture current behavior. Run the code, or read it precisely enough to know what it returns, then assert exactly that.
+4. Cover the edges and error paths. The empty input, the boundary, the null, the failure — these are where untested code breaks first and where coverage pays off most.
+
+## What to test
+
+- **The public interface and observable contract.** The return values, the side effects, the errors a caller can actually see.
+- **Edge cases.** Empty inputs, single elements, boundaries, maximum sizes, null and missing values.
+- **Error conditions.** What should fail, and how it fails — the exception type, the error result, the rejected promise.
+- **Not implementation details.** Testing internals — private helpers, intermediate state, exact call order — makes tests brittle and blocks the very refactoring this coverage is meant to enable. Assert on what the code does, not how it does it.
+
+## Test quality
+
+- **Arrange-act-assert.** Set up the inputs, run the behavior, assert the result. One clear shape per test.
+- **One behavior per test.** If the test name needs "and," split it. A focused test names exactly what broke when it fails.
+- **Descriptive names.** State the behavior being verified — `returns empty list when the input is empty`, not `test3`.
+- **Independent tests.** No shared mutable state, no ordering dependencies. Each test builds its own fresh fixtures and passes in isolation.
+
+## Coverage discipline
+
+Meaningful coverage beats coverage for its own sake. 100% of lines hit by shallow assertions is worse than 70% that genuinely exercise the behaviors that matter. Do not write tests to move a number — every test should fail if a real behavior breaks. If a test would pass no matter what the code did, it is testing nothing; delete it rather than bank it as coverage.
+
+## The handoff to TDD
+
+Once existing code has a characterization suite around it, the safety net is in place. From there, future changes to that code can be made test-first: write the failing test for the new behavior, then change the code — at which point `tdd-workflow` takes over. This skill gets untested code to the starting line; TDD runs from there.
+
+## Anti-patterns
+
+- **Asserting what the code *should* do, not what it *does*.** This is the trap unique to characterizing existing code. Your job is to pin current behavior, not to encode your opinion of correct behavior. If the assertion you write fails on the first run, the code is telling you its actual behavior — capture that (with a note if it looks wrong), don't "fix" the test to match what you assumed.
+- **Snapshotting everything.** A giant snapshot of an entire output object looks like thorough coverage and is the opposite: it breaks noisily on any change, tells you nothing about *which* behavior broke, and silently blesses whatever the code happened to produce. Assert the specific behaviors that matter.
+- **Pinning the implementation.** Tests that reach into private helpers, intermediate state, or exact call order break the moment anyone refactors — which defeats the entire reason you added the tests. Characterize the contract, not the wiring.
+- **Coverage theater.** Tests written to lift a percentage, asserting `result !== null` and stopping there, create false confidence and waste the next reader's time. A test that cannot fail when a real behavior breaks is not coverage.
+- **Over-mocking.** When the mock setup dwarfs the code under test, you are testing the mock, not the system. Mock at boundaries you do not own; use real objects for the code you are trying to protect.
