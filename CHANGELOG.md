@@ -4,6 +4,25 @@ All notable changes to agentry are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] — research and design content
+
+Two universal additions completing the dev-loop core: research before coding, and structural design before implementation. Content-only release with no infrastructure changes.
+
+### Added
+
+**Agents:**
+- `architect` — system and module design decisions (boundaries, responsibilities, data flow, trade-offs). Distinct from `planner`, which sequences the implementation once the structure is decided.
+
+**Skills:**
+- `search-first` — research-before-coding methodology; search the codebase, docs, and dependencies for existing solutions before writing new code.
+
+**Commands** (Claude Code only):
+- `/architect` — slash-command wrapper for the `architect` agent.
+
+### Changed
+
+- README "What's inside" expanded with the new agent, skill, and command.
+
 ## [0.4.0] — code creation and maintenance content
 
 Curated content filling the creation and maintenance half of the workflow — restructuring existing code, writing documentation, and adding tests to code that already exists. No infrastructure changes.
