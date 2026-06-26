@@ -12,10 +12,12 @@ For the why behind the shape, see [`decisions.md`](./decisions.md). For high-lev
 | `skills/<name>/SKILL.md` | source | Authored skills (frontmatter + body, may bundle siblings). Edit here. |
 | `commands/<name>.md` | source | Authored slash commands. Edit here. |
 | `rules/<category>/<name>.md` | source | Authored rules, namespaced by category (language identifier or topic). Edit here. |
-| `scripts/sync-harnesses.js` | tool | Sync engine. Generates `.claude/`, `.cursor/`, `.codex/` from sources. |
+| `hooks/<name>.{sh,js}` | source | Authored harness hooks (scripts). Edit here. |
+| `scripts/sync-harnesses.js` | tool | Sync engine. Generates `.claude/`, `.cursor/`, `.codex/`, `.opencode/` from sources. |
 | `scripts/frontmatter.js` | tool | Shared YAML-ish frontmatter parser and validation helpers. |
-| `scripts/cursor-transform.js` | tool | `toCursorRule` — source-skill → `.mdc` rule transform. |
-| `scripts/codex-transform.js` | tool | `renameSkill` and `agentToSkill` — Codex adapter transforms. |
+| `scripts/cursor-transform.js` | tool | `toCursorRule`, `globsForLanguage` — Cursor `.mdc` rule transform and language-glob mapping. |
+| `scripts/codex-transform.js` | tool | `renameSkill`, `agentToSkill`, `ruleToSkill` — Codex adapter transforms. |
+| `scripts/opencode-transform.js` | tool | `agentToOpenCodeAgent`, `commandToOpenCode` — OpenCode adapter transforms. |
 | `scripts/lint-frontmatter.js` | tool | `npm run lint` — fail-on-invalid frontmatter check. |
 | `scripts/doctor.js` | tool | `npm run doctor` — installation health check. |
 | `scripts/install.sh` | installer | POSIX installer (Unix/macOS). |
@@ -28,6 +30,7 @@ For the why behind the shape, see [`decisions.md`](./decisions.md). For high-lev
 | `.claude/` | generated | Claude Code adapter output. **Do not edit.** Wiped on sync. |
 | `.cursor/` | generated | Cursor adapter output. **Do not edit.** Wiped on sync. |
 | `.codex/` | generated | Codex adapter output. **Do not edit.** Wiped on sync. |
+| `.opencode/` | generated | OpenCode adapter output. **Do not edit.** Wiped on sync. |
 | `.claude-plugin/plugin.json` | generated | Claude Code plugin manifest. Written by `syncClaude`. |
 | `.github/workflows/sync-check.yml` | ci | Three-job CI workflow (sync determinism, lint, tests). |
 | `.gitignore` | config | Tracks generated harness dirs; ignores Claude Code per-user state. |
@@ -97,17 +100,26 @@ Shared frontmatter parser and validation helpers. Three call sites: `lint-frontm
 
 ### `cursor-transform.js`
 
-- **`toCursorRule(content)`** — Translates source skill content to a Cursor `.mdc` rule. Three behaviors:
-  - No frontmatter in source → wraps content in a new `alwaysApply: false` block.
-  - Frontmatter without `alwaysApply` → appends the field to the existing block.
-  - Frontmatter already declares `alwaysApply` (any value, any indentation) → preserved as-is.
+- **`toCursorRule(content, opts = {})`** — Translates source skill or rule content to a Cursor `.mdc` rule. Behaviors:
+  - No frontmatter in source → wraps content in a new block with the optional `globs` and `alwaysApply: false`.
+  - Frontmatter without `alwaysApply` → appends `globs` (when provided and absent) and `alwaysApply: false` to the existing block.
+  - Frontmatter already declaring `alwaysApply` or `globs` → preserved as-is (no duplication).
   - Body is separated from the closing `---` by exactly one blank line, regardless of source spacing.
+- **`globsForLanguage(language)`** — Returns the comma-separated Cursor glob patterns for a language identifier (from `LANGUAGE_GLOBS`), or `null` if unmapped. Case-insensitive.
+- **`LANGUAGE_GLOBS`** — The language → globs map (TypeScript, Python, Go, Rust, and others).
 - **Imports:** `parseFrontmatter` from `frontmatter.js`.
 
 ### `codex-transform.js`
 
 - **`renameSkill(content, newName)`** — Rewrites only the `name:` line. All other fields and body preserved verbatim. Returns `null` if source has no frontmatter.
 - **`agentToSkill(content, newName)`** — Strips an agent's frontmatter down to `name` (set to `newName`) and `description`. Drops `tools`, `model`, and any other fields. Body preserved verbatim. Returns `null` if source has no frontmatter.
+- **`ruleToSkill(content, newName)`** — Converts a rule to a Codex skill: `name` (set to `newName`) and `description`, dropping rule-specific fields like `language`. Description falls back to the first `# ` heading, then a generic label, so a rule with no frontmatter still produces a described skill. Never returns `null`.
+- **Imports:** `parseFrontmatter` from `frontmatter.js`.
+
+### `opencode-transform.js`
+
+- **`agentToOpenCodeAgent(content)`** — Translates an agent to OpenCode's shape: keeps `description`, adds `mode: subagent`, drops `name` (filename-derived), `tools`, and `model`. Body preserved verbatim. Returns `null` if source has no frontmatter.
+- **`commandToOpenCode(content)`** — Keeps `description`, drops `argument-hint`. Body — including `$ARGUMENTS` — preserved verbatim. Returns `null` if source has no frontmatter.
 - **Imports:** `parseFrontmatter` from `frontmatter.js`.
 
 ### `lint-frontmatter.js`
@@ -143,7 +155,7 @@ Flags recognized:
 - Unknown flags set `process.exitCode = 1` and are reported to stderr but do not abort.
 - Unknown targets are collected and reported at the start of `main()` but do not abort the run.
 
-Default behavior with no `--target` flag runs all three adapters in order: `claude`, `cursor`, `codex`.
+Default behavior with no `--target` flag runs all four adapters in order: `claude`, `cursor`, `codex`, `opencode`.
 
 ### Per-adapter steps
 
@@ -254,9 +266,9 @@ Covers `parseFrontmatter`, `checkRequired`, `checkDescription`:
 - `checkRequired` — all-present returns `[]`; missing keys reported; empty string treated as missing; output order matches `requiredKeys`; extra fields ignored.
 - `checkDescription` — null for ≥ 20 chars; null at exactly 20; `too short` for shorter; `missing or empty` for `undefined`/empty; custom `minLength` honored.
 
-### `tests/cursor-transform.test.js` — 9 cases
+### `tests/cursor-transform.test.js` — 16 cases
 
-Covers `toCursorRule`:
+Covers `toCursorRule`, `globsForLanguage`:
 
 - No-frontmatter input → wrapped with new `alwaysApply: false` block.
 - Frontmatter without `alwaysApply` → field appended.
@@ -267,13 +279,23 @@ Covers `toCursorRule`:
 - Existing blank line preserved.
 - With-blank-line and no-blank-line sources produce identical output (normalization).
 - Additional frontmatter fields (`tags`, etc.) preserved verbatim.
+- `globs` injected before `alwaysApply` when provided; not duplicated when already declared; null globs ignored; added in the no-frontmatter case; absent when no opts passed (skills unaffected).
+- `globsForLanguage` maps known languages case-insensitively and returns `null` for unknown or missing.
 
-### `tests/codex-transform.test.js` — 13 cases
+### `tests/codex-transform.test.js` — 19 cases
 
-Covers `renameSkill` and `agentToSkill`:
+Covers `renameSkill`, `agentToSkill`, `ruleToSkill`:
 
 - `renameSkill` — name field updated; description and extra fields preserved; body verbatim; CRLF tolerated; null on no-frontmatter input; fields starting with `name` (e.g. `namespace`) untouched.
 - `agentToSkill` — `tools` dropped; `model` dropped; `name` set to new value; description preserved; body verbatim including code blocks and headings; output is a valid SKILL.md structure; extra agent-only fields dropped; null on no-frontmatter input.
+- `ruleToSkill` — `language` dropped, name/description kept; body verbatim; description falls back to the first heading, then a generic label; never returns `null`.
+
+### `tests/opencode-transform.test.js` — 8 cases
+
+Covers `agentToOpenCodeAgent`, `commandToOpenCode`:
+
+- `agentToOpenCodeAgent` — `mode: subagent` set and `description` kept; `name`/`tools`/`model` dropped; body verbatim including code blocks; a colon-containing description preserved; null on no-frontmatter input.
+- `commandToOpenCode` — `description` kept and `argument-hint` dropped; `$ARGUMENTS` preserved in the body; null on no-frontmatter input.
 
 ## Configuration reference
 
@@ -306,7 +328,7 @@ Three jobs, all on `ubuntu-latest` with Node 20, running on pushes and PRs to `m
 
 1. **`sync-determinism`** — `npm run sync`, then `git status --porcelain` fails the build if sync produced uncommitted changes. Catches the common contribution mistake of editing source without committing regenerated harness files.
 2. **`frontmatter-lint`** — `npm run lint`. Catches malformed agent/skill frontmatter.
-3. **`tests`** — `npm test`. Runs the 47 unit tests.
+3. **`tests`** — `npm test`. Runs the 67 unit tests.
 
 Tests do not block sync-determinism or lint; the three jobs run in parallel. There is no functionality test that exercises the actual sync output against a fixture — sync is verified only by its determinism and by the lint pass on its input.
 
