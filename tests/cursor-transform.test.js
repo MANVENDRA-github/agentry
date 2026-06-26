@@ -1,6 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { toCursorRule } from "../scripts/cursor-transform.js";
+import {
+  toCursorRule,
+  globsForLanguage,
+  LANGUAGE_GLOBS,
+} from "../scripts/cursor-transform.js";
 
 test("toCursorRule wraps content with no frontmatter in a new frontmatter block", () => {
   const input = "just a body, no frontmatter at all\n";
@@ -74,4 +78,58 @@ test("toCursorRule preserves additional frontmatter fields verbatim", () => {
     "---\nname: tone-check\ndescription: example\ntags: [docs, tone]\n---\n\nBody.\n";
   const output = toCursorRule(input);
   assert.match(output, /^---\nname: tone-check\ndescription: example\ntags: \[docs, tone\]\nalwaysApply: false\n---\n/);
+});
+
+// --- globs (Auto Attached rules) ------------------------------------------
+
+test("toCursorRule with no opts behaves exactly as before (no globs)", () => {
+  const input = "---\nname: foo\ndescription: bar\n---\n\nBody.\n";
+  assert.strictEqual(toCursorRule(input), toCursorRule(input, {}));
+  assert.doesNotMatch(toCursorRule(input), /globs/);
+});
+
+test("toCursorRule injects globs before alwaysApply when provided", () => {
+  const input =
+    "---\nname: strict-mode\ndescription: TS rule\nlanguage: typescript\n---\n\nBody.\n";
+  const output = toCursorRule(input, { globs: "**/*.ts,**/*.tsx" });
+  assert.match(
+    output,
+    /language: typescript\nglobs: \*\*\/\*\.ts,\*\*\/\*\.tsx\nalwaysApply: false\n---\n/,
+  );
+});
+
+test("toCursorRule does not duplicate globs when already declared", () => {
+  const input =
+    "---\nname: foo\nglobs: **/*.go\n---\n\nBody.\n";
+  const output = toCursorRule(input, { globs: "**/*.rs" });
+  const occurrences = (output.match(/globs\s*:/g) || []).length;
+  assert.strictEqual(occurrences, 1);
+  assert.match(output, /globs: \*\*\/\*\.go/);
+});
+
+test("toCursorRule treats null globs as no globs", () => {
+  const input = "---\nname: foo\n---\n\nBody.\n";
+  const output = toCursorRule(input, { globs: null });
+  assert.doesNotMatch(output, /globs/);
+  assert.match(output, /alwaysApply: false/);
+});
+
+test("toCursorRule adds globs in the no-frontmatter case too", () => {
+  const output = toCursorRule("plain body\n", { globs: "**/*.py" });
+  assert.strictEqual(
+    output,
+    "---\nglobs: **/*.py\nalwaysApply: false\n---\n\nplain body\n",
+  );
+});
+
+test("globsForLanguage maps known languages and is case-insensitive", () => {
+  assert.strictEqual(globsForLanguage("typescript"), LANGUAGE_GLOBS.typescript);
+  assert.strictEqual(globsForLanguage("TypeScript"), LANGUAGE_GLOBS.typescript);
+  assert.strictEqual(globsForLanguage("go"), "**/*.go");
+});
+
+test("globsForLanguage returns null for unknown or missing language", () => {
+  assert.strictEqual(globsForLanguage("cobol"), null);
+  assert.strictEqual(globsForLanguage(undefined), null);
+  assert.strictEqual(globsForLanguage(""), null);
 });

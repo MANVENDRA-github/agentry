@@ -12,8 +12,9 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { toCursorRule } from "./cursor-transform.js";
-import { renameSkill, agentToSkill } from "./codex-transform.js";
+import { parseFrontmatter } from "./frontmatter.js";
+import { toCursorRule, globsForLanguage } from "./cursor-transform.js";
+import { renameSkill, agentToSkill, ruleToSkill } from "./codex-transform.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, "..");
@@ -23,6 +24,7 @@ const SOURCES = {
   skills: path.join(REPO_ROOT, "skills"),
   commands: path.join(REPO_ROOT, "commands"),
   rules: path.join(REPO_ROOT, "rules"),
+  hooks: path.join(REPO_ROOT, "hooks"),
 };
 
 // --- CLI parsing -----------------------------------------------------------
@@ -135,9 +137,9 @@ async function copyTree(srcDir, destDir) {
 // --- Adapters --------------------------------------------------------------
 
 /**
- * Sync agents, skills, and commands into .claude/, plus write the plugin
- * manifest. Only the generated subdirectories of .claude/ are wiped — the
- * top-level .claude/ directory may also hold Claude Code's per-user state
+ * Sync agents, skills, commands, rules, and hooks into .claude/, plus write the
+ * plugin manifest. Only the generated subdirectories of .claude/ are wiped —
+ * the top-level .claude/ directory may also hold Claude Code's per-user state
  * (e.g. settings.local.json) which must be preserved.
  */
 async function syncClaude() {
@@ -148,6 +150,7 @@ async function syncClaude() {
   await rmGenerated(path.join(claudeDir, "skills"));
   await rmGenerated(path.join(claudeDir, "commands"));
   await rmGenerated(path.join(claudeDir, "rules"));
+  await rmGenerated(path.join(claudeDir, "hooks"));
 
   // agents/<name>.md -> .claude/agents/<name>.md
   for (const entry of await readDirSafe(SOURCES.agents)) {
@@ -196,9 +199,16 @@ async function syncClaude() {
     }
   }
 
+  // hooks/<name>.{sh,js,...} (and any subdirectories) -> .claude/hooks/
+  // Hook scripts are copied verbatim into the install location. Claude Code
+  // runs hooks that the user references from settings.json — agentry ships the
+  // scripts; wiring them into settings is the user's step (the same "wipe what
+  // you own, leave user state alone" discipline keeps us out of settings.json).
+  await copyTree(SOURCES.hooks, path.join(claudeDir, "hooks"));
+
   const manifest = {
     name: "agentry",
-    version: "0.5.0",
+    version: "0.6.0",
     description:
       "Author your AI coding agents and skills once. Sync them to every harness you use.",
     author: "MANVENDRA-github",
@@ -244,10 +254,12 @@ async function syncCursor() {
 
   // rules/<category>/<name>.md -> .cursor/rules/<category>/<name>.mdc
   // Language rules nest under their category. They use the same toCursorRule
-  // transform as skills — `alwaysApply: false` keeps them opt-in for v0.3.
-  // (A future enhancement can derive `globs` from the `language` field for
-  // context-triggered auto-apply.) Cursor discovers .mdc files recursively
-  // inside .cursor/rules/.
+  // transform as skills. When the rule's `language` field (falling back to the
+  // category directory name) maps to known globs, the rule is written with
+  // `globs` + `alwaysApply: false` — Cursor's "Auto Attached" mode, so the rule
+  // activates only when a matching file is in context. Unmapped languages stay
+  // opt-in (`alwaysApply: false`, no globs). Cursor discovers .mdc files
+  // recursively inside .cursor/rules/.
   for (const category of await readDirSafe(SOURCES.rules)) {
     if (!category.isDirectory()) continue;
     const srcCategoryDir = path.join(SOURCES.rules, category.name);
@@ -260,7 +272,8 @@ async function syncCursor() {
         continue;
       }
       const source = await fs.readFile(path.join(srcCategoryDir, entry.name), "utf8");
-      await writeFile(dest, toCursorRule(source));
+      const language = parseFrontmatter(source)?.fields.language || category.name;
+      await writeFile(dest, toCursorRule(source, { globs: globsForLanguage(language) }));
     }
   }
 }
@@ -272,12 +285,16 @@ async function syncCursor() {
  * primitive that matches Claude Code's, so each agent becomes a skill with
  * `tools` and `model` dropped (see codex-transform.js).
  *
+ * Rules are converted to Codex skills too. Codex has no rules primitive
+ * distinct from skills, so each rule becomes a skill (`ruleToSkill`) named
+ * `agentry-<category>-<name>` — the category in the name keeps language rules
+ * from colliding with each other or with converted skills/agents. This is the
+ * same approximation pattern as the agent->skill conversion.
+ *
  * Commands are skipped. Codex does not support user-extensible slash
  * commands; the closest equivalent is `$skill-name` invocation, which the
- * converted skills already provide.
- *
- * Rules are skipped in v0.3. Codex has its own rules concept that needs
- * dedicated investigation; the mapping is deferred to v0.4.
+ * converted skills already provide. Hooks are skipped too — Codex's
+ * notification model differs and has no drop-in hooks directory.
  *
  * Only .codex/agents/skills/ is wiped on sync. The parent .codex/ directory
  * may hold Codex's per-user state (e.g. config.toml) and must be preserved —
@@ -328,6 +345,23 @@ async function syncCodex() {
     }
     const source = await fs.readFile(path.join(SOURCES.agents, entry.name), "utf8");
     await writeFile(destSkillFile, agentToSkill(source, prefixed));
+  }
+
+  // rules/<category>/<name>.md -> .codex/agents/skills/agentry-<category>-<name>/SKILL.md
+  for (const category of await readDirSafe(SOURCES.rules)) {
+    if (!category.isDirectory()) continue;
+    const srcCategoryDir = path.join(SOURCES.rules, category.name);
+    for (const entry of await readDirSafe(srcCategoryDir)) {
+      if (!entry.isFile() || !entry.name.endsWith(".md")) continue;
+      const prefixed = `agentry-${category.name}-${entry.name.replace(/\.md$/, "")}`;
+      const destSkillFile = path.join(codexSkillsDir, prefixed, "SKILL.md");
+      if (DRY_RUN) {
+        console.log(`  [dry] ${rel(destSkillFile)}`);
+        continue;
+      }
+      const source = await fs.readFile(path.join(srcCategoryDir, entry.name), "utf8");
+      await writeFile(destSkillFile, ruleToSkill(source, prefixed));
+    }
   }
 }
 

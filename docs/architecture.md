@@ -25,9 +25,9 @@ Each arrow is one well-defined transformation. Source files never change as a si
 |---|---|---|
 | `agents/` | `<name>.md` per agent. Frontmatter + system prompt body. | Active in v0.1 (Claude Code, Cursor); converted to skills for Codex via v0.3. |
 | `skills/` | `<name>/SKILL.md` per skill (plus any siblings the skill bundles). | Active in v0.1 (Claude Code, Cursor); Codex support added in v0.3. |
-| `commands/` | `<name>.md` per slash command. | Planned for v0.2 |
-| `rules/` | `<category>/<rule-name>.md` per rule, namespaced by language (`typescript`, `python`, `go`) or topic (`security`, `performance`). | Active in v0.3 (Claude Code verbatim, Cursor as `.mdc` with `alwaysApply: false`; Codex deferred to v0.4) |
-| `hooks/` | `<name>.{sh,js}` per harness hook. | Planned for v0.3 |
+| `commands/` | `<name>.md` per slash command. | Active in v0.2 (Claude Code only) |
+| `rules/` | `<category>/<rule-name>.md` per rule, namespaced by language (`typescript`, `python`, `go`) or topic (`security`, `performance`). | Active in v0.3 (Claude Code verbatim; Cursor as `.mdc` — auto-attached via `language`-derived globs since v0.6; Codex as a skill since v0.6). |
+| `hooks/` | `<name>.{sh,js}` per harness hook. | Active in v0.6 (Claude Code only) |
 
 The sync engine handles missing source directories gracefully — adding a new content type means creating the directory, adding source files, and extending the adapters to know what to do with them.
 
@@ -53,7 +53,9 @@ Each adapter does three things, in order:
 
 Adapters log each operation so the user sees what changed. Operations are logged with paths relative to the repo root, normalized to forward slashes regardless of OS.
 
-**Rules** (added v0.3) follow the same pattern. `syncClaude` copies them verbatim to `.claude/rules/<category>/<rule-name>.md`. `syncCursor` runs the same `toCursorRule` transform used for skills and writes to `.cursor/rules/<category>/<rule-name>.mdc` — the nested category preserves the source namespace across both harnesses. `syncCodex` skips rules in v0.3; Codex has its own rules concept and the mapping is deferred to v0.4.
+**Rules** (added v0.3) follow the same pattern. `syncClaude` copies them verbatim to `.claude/rules/<category>/<rule-name>.md`. `syncCursor` runs the same `toCursorRule` transform used for skills and writes to `.cursor/rules/<category>/<rule-name>.mdc` — the nested category preserves the source namespace across both harnesses. Since v0.6, a rule whose `language` field (falling back to its category directory) maps to a known glob set is written with `globs` + `alwaysApply: false`, which Cursor treats as "Auto Attached": the rule activates only when a matching file is in context. `syncCodex` converts each rule to a skill (`ruleToSkill`) named `agentry-<category>-<name>` — Codex has no rules primitive distinct from skills, so this is the same approximation as the agent→skill conversion.
+
+**Hooks** (added v0.6) are scripts, not markdown. `syncClaude` copies `hooks/` verbatim into `.claude/hooks/`; the user references a hook from `settings.json` to enable it (agentry ships the script but never touches `settings.json` — same "wipe what you own, leave user state alone" discipline). `syncCursor` and `syncCodex` skip hooks: neither harness has a drop-in hooks directory, and their event models need a dedicated mapping. agentry ships one pattern-proof hook, `hooks/protect-generated-dirs.js`, a `PreToolUse` guard that blocks edits to the generated directories.
 
 ## The Codex adapter
 

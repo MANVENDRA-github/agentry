@@ -117,7 +117,7 @@ if [[ "$TARGET" == "claude" ]]; then
   else
     DEST_DIR="$PWD/.claude"
   fi
-  SUBDIRS=("agents" "skills" "commands" "rules")
+  SUBDIRS=("agents" "skills" "commands" "rules" "hooks")
 elif [[ "$TARGET" == "cursor" ]]; then
   SRC_DIR="$REPO_ROOT/.cursor"
   DEST_DIR="$PWD/.cursor"
