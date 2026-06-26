@@ -15,6 +15,7 @@ import { fileURLToPath } from "node:url";
 import { parseFrontmatter } from "./frontmatter.js";
 import { toCursorRule, globsForLanguage } from "./cursor-transform.js";
 import { renameSkill, agentToSkill, ruleToSkill } from "./codex-transform.js";
+import { agentToOpenCodeAgent, commandToOpenCode } from "./opencode-transform.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, "..");
@@ -29,7 +30,7 @@ const SOURCES = {
 
 // --- CLI parsing -----------------------------------------------------------
 
-const ALL_TARGETS = ["claude", "cursor", "codex"];
+const ALL_TARGETS = ["claude", "cursor", "codex", "opencode"];
 let DRY_RUN = false;
 let TARGETS = [...ALL_TARGETS];
 const UNKNOWN_TARGETS = [];
@@ -208,7 +209,7 @@ async function syncClaude() {
 
   const manifest = {
     name: "agentry",
-    version: "0.6.0",
+    version: "0.7.0",
     description:
       "Author your AI coding agents and skills once. Sync them to every harness you use.",
     author: "MANVENDRA-github",
@@ -365,7 +366,81 @@ async function syncCodex() {
   }
 }
 
-const ADAPTERS = { claude: syncClaude, cursor: syncCursor, codex: syncCodex };
+/**
+ * Sync into .opencode/. OpenCode is the closest harness to Claude Code — it has
+ * native agents, commands, and skills, all authored as markdown read from
+ * `.opencode/<kind>/` (project) and `~/.config/opencode/<kind>/` (global), with
+ * plural subdirectory names. The mapping is therefore near-verbatim:
+ *
+ *   - Agents -> .opencode/agents/<name>.md, frontmatter translated to OpenCode
+ *     shape (`mode: subagent`; `name`/`tools`/`model` dropped — see
+ *     opencode-transform.js for why).
+ *   - Skills -> .opencode/skills/<name>/ copied verbatim (OpenCode uses the
+ *     same Agent Skills format), including any bundled sibling files.
+ *   - Commands -> .opencode/commands/<name>.md, `argument-hint` dropped. Unlike
+ *     Cursor and Codex, OpenCode supports user-extensible commands, so agentry's
+ *     commands reach it. The bodies reference agents by their unprefixed names,
+ *     which match the unprefixed agent files written above.
+ *
+ * No `agentry-` prefix is applied: like Claude Code, OpenCode's primitives map
+ * 1:1, so agentry content keeps its natural shape and "owns" its names (the
+ * installer's uninstall is name-based). Rules and hooks are deferred for
+ * OpenCode — its rules model is AGENTS.md / the `instructions` config, a
+ * separate mapping, and it has no drop-in hooks directory.
+ *
+ * Only the generated subdirectories are wiped. The parent .opencode/ may hold
+ * the user's opencode.json and other state — same "wipe what you own" discipline
+ * as syncClaude and syncCodex.
+ */
+async function syncOpenCode() {
+  console.log("\n[opencode]");
+  const ocDir = path.join(REPO_ROOT, ".opencode");
+
+  await rmGenerated(path.join(ocDir, "agents"));
+  await rmGenerated(path.join(ocDir, "commands"));
+  await rmGenerated(path.join(ocDir, "skills"));
+
+  // agents/<name>.md -> .opencode/agents/<name>.md
+  for (const entry of await readDirSafe(SOURCES.agents)) {
+    if (!entry.isFile() || !entry.name.endsWith(".md")) continue;
+    const dest = path.join(ocDir, "agents", entry.name);
+    if (DRY_RUN) {
+      console.log(`  [dry] ${rel(dest)}`);
+      continue;
+    }
+    const source = await fs.readFile(path.join(SOURCES.agents, entry.name), "utf8");
+    await writeFile(dest, agentToOpenCodeAgent(source));
+  }
+
+  // skills/<name>/ -> .opencode/skills/<name>/ (verbatim, incl. sibling files)
+  for (const entry of await readDirSafe(SOURCES.skills)) {
+    if (entry.isDirectory()) {
+      await copyTree(
+        path.join(SOURCES.skills, entry.name),
+        path.join(ocDir, "skills", entry.name),
+      );
+    }
+  }
+
+  // commands/<name>.md -> .opencode/commands/<name>.md
+  for (const entry of await readDirSafe(SOURCES.commands)) {
+    if (!entry.isFile() || !entry.name.endsWith(".md")) continue;
+    const dest = path.join(ocDir, "commands", entry.name);
+    if (DRY_RUN) {
+      console.log(`  [dry] ${rel(dest)}`);
+      continue;
+    }
+    const source = await fs.readFile(path.join(SOURCES.commands, entry.name), "utf8");
+    await writeFile(dest, commandToOpenCode(source));
+  }
+}
+
+const ADAPTERS = {
+  claude: syncClaude,
+  cursor: syncCursor,
+  codex: syncCodex,
+  opencode: syncOpenCode,
+};
 
 // --- main ------------------------------------------------------------------
 

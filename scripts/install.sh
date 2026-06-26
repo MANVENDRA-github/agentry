@@ -11,6 +11,8 @@
 #   ./scripts/install.sh --target cursor              # install to ./.cursor/
 #   ./scripts/install.sh --target codex               # install to ~/.agents/skills/
 #   ./scripts/install.sh --target codex --project    # install to ./.agents/skills/
+#   ./scripts/install.sh --target opencode            # install to ~/.config/opencode/
+#   ./scripts/install.sh --target opencode --project # install to ./.opencode/
 #   ./scripts/install.sh --target claude --uninstall  # remove installed files
 #   ./scripts/install.sh --help
 
@@ -33,6 +35,7 @@ Targets:
   claude    Claude Code config (default scope: --user)
   cursor    Cursor project config (default scope: --project)
   codex     Codex skills (default scope: --user)
+  opencode  OpenCode config (default scope: --user)
 
 Flags:
   --user        Install to user-level location (claude, codex)
@@ -46,6 +49,7 @@ Examples:
   ./scripts/install.sh --target cursor
   ./scripts/install.sh --target codex
   ./scripts/install.sh --target codex --project
+  ./scripts/install.sh --target opencode
   ./scripts/install.sh --target claude --uninstall
 EOF
 }
@@ -83,9 +87,9 @@ if [[ -z "$TARGET" ]]; then
 fi
 
 case "$TARGET" in
-  claude|cursor|codex) ;;
+  claude|cursor|codex|opencode) ;;
   *)
-    echo "Error: unknown target '$TARGET'. Valid: claude, cursor, codex" >&2
+    echo "Error: unknown target '$TARGET'. Valid: claude, cursor, codex, opencode" >&2
     exit 1
     ;;
 esac
@@ -99,7 +103,7 @@ if [[ $USER_FLAG -eq 1 ]]; then
   SCOPE="user"
 elif [[ $PROJECT_FLAG -eq 1 ]]; then
   SCOPE="project"
-elif [[ "$TARGET" == "claude" || "$TARGET" == "codex" ]]; then
+elif [[ "$TARGET" == "claude" || "$TARGET" == "codex" || "$TARGET" == "opencode" ]]; then
   SCOPE="user"
 else
   SCOPE="project"
@@ -122,6 +126,15 @@ elif [[ "$TARGET" == "cursor" ]]; then
   SRC_DIR="$REPO_ROOT/.cursor"
   DEST_DIR="$PWD/.cursor"
   SUBDIRS=("agents" "rules")
+elif [[ "$TARGET" == "opencode" ]]; then
+  # opencode: project config is .opencode/; user config is ~/.config/opencode/.
+  SRC_DIR="$REPO_ROOT/.opencode"
+  if [[ "$SCOPE" == "user" ]]; then
+    DEST_DIR="$HOME/.config/opencode"
+  else
+    DEST_DIR="$PWD/.opencode"
+  fi
+  SUBDIRS=("agents" "commands" "skills")
 else
   # codex: skills live under .agents/skills/ at the destination. The src path
   # points at .codex/agents (one level above the skills/ subdir), so the

@@ -4,6 +4,41 @@ All notable changes to agentry are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] — OpenCode adapter
+
+A fourth harness. OpenCode CLI has native agents, commands, and skills, so the mapping is near-verbatim — the closest of any harness to Claude Code, and the only other one that receives agentry's slash commands.
+
+### Added
+
+**Harness adapter:**
+- OpenCode support (`--target opencode`). `syncOpenCode` generates into `.opencode/` with plural subdirectories (`agents/`, `commands/`, `skills/`), matching current OpenCode (singular forms are backwards-compat only).
+  - **Agents** → `.opencode/agents/<name>.md`: frontmatter translated to OpenCode's shape — `description` kept, `mode: subagent` added, and `name` / `tools` / `model` dropped (Claude Code's `tools` allow-list and `model: sonnet` shorthand do not match OpenCode's permission-map and `provider/model` forms).
+  - **Skills** → `.opencode/skills/<name>/`: copied verbatim, including bundled sibling files. OpenCode uses the same Agent Skills format.
+  - **Commands** → `.opencode/commands/<name>.md`: `argument-hint` dropped, `$ARGUMENTS` body preserved. OpenCode is the only harness besides Claude Code with user-extensible commands.
+  - No `agentry-` prefix — like Claude Code, OpenCode's primitives map 1:1, so content keeps its names and the command→agent references stay intact.
+
+**Modules:**
+- `scripts/opencode-transform.js` — `agentToOpenCodeAgent` and `commandToOpenCode`.
+
+**Tooling:**
+- Install scripts accept `--target opencode` / `-Target opencode`. Default scope is user (`~/.config/opencode/`); `--project` installs to `.opencode/`.
+- `doctor.js` checks the generated `.opencode/` tree against sources.
+
+### Changed
+
+- `ALL_TARGETS` and the `ADAPTERS` map gained `opencode`.
+- Plugin manifest and `package.json` version bumped to `0.7.0`.
+- README and architecture doc updated: four-harness data flow, a "The OpenCode adapter" section, and a note that commands now reach Claude Code *and* OpenCode.
+
+### Tests
+
+- 67 unit tests (up from 59). Added `tests/opencode-transform.test.js`: `agentToOpenCodeAgent` (mode set, field drops, body and colon-in-description preservation, null on no frontmatter) and `commandToOpenCode` (description kept, `argument-hint` dropped, `$ARGUMENTS` preserved).
+
+### Deferred
+
+- **OpenCode rules and hooks.** OpenCode's rules model is `AGENTS.md` plus the `instructions` config — a separate mapping from a per-file rules directory. Hooks have no OpenCode drop-in directory. Both are deferred.
+- **OpenCode agent tool permissions.** `tools` is dropped rather than translated into OpenCode's permission map; deriving it from the source allow-list is a possible future enhancement.
+
 ## [0.6.0] — hooks pipeline, command coverage, and completed rule mappings
 
 Closes the gaps the previous releases flagged as deferred: hooks become a real content type, the new agents get command wrappers, and the two rule mappings parked at v0.3 (Cursor auto-apply globs, Codex rules) are now implemented.

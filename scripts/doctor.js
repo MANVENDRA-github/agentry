@@ -99,6 +99,7 @@ else info("hooks/ — no hook files (optional)");
 console.log("\nGenerated:");
 let claudeMissing = [];
 let cursorMissing = [];
+let opencodeMissing = [];
 
 for (const file of agentFiles) {
   if (!(await exists(path.join(REPO_ROOT, ".claude/agents", file)))) {
@@ -106,6 +107,9 @@ for (const file of agentFiles) {
   }
   if (!(await exists(path.join(REPO_ROOT, ".cursor/agents", `agentry-${file}`)))) {
     cursorMissing.push(`.cursor/agents/agentry-${file}`);
+  }
+  if (!(await exists(path.join(REPO_ROOT, ".opencode/agents", file)))) {
+    opencodeMissing.push(`.opencode/agents/${file}`);
   }
 }
 
@@ -115,6 +119,9 @@ for (const skill of skillDirs) {
   }
   if (!(await exists(path.join(REPO_ROOT, ".cursor/rules", `${skill}.mdc`)))) {
     cursorMissing.push(`.cursor/rules/${skill}.mdc`);
+  }
+  if (!(await exists(path.join(REPO_ROOT, ".opencode/skills", skill, "SKILL.md")))) {
+    opencodeMissing.push(`.opencode/skills/${skill}/SKILL.md`);
   }
 }
 
@@ -130,6 +137,9 @@ else bad(`.claude/ missing: ${claudeMissing.join(", ")} — run 'npm run sync'`)
 
 if (cursorMissing.length === 0) ok(".cursor/ matches sources");
 else bad(`.cursor/ missing: ${cursorMissing.join(", ")} — run 'npm run sync'`);
+
+if (opencodeMissing.length === 0) ok(".opencode/ matches sources");
+else bad(`.opencode/ missing: ${opencodeMissing.join(", ")} — run 'npm run sync'`);
 
 // --- Frontmatter -----------------------------------------------------------
 
