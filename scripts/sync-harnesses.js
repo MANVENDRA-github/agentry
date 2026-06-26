@@ -14,6 +14,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { toCursorRule } from "./cursor-transform.js";
 import { renameSkill, agentToSkill } from "./codex-transform.js";
+import { toMcpServersJson } from "./mcp-transform.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, "..");
@@ -23,6 +24,7 @@ const SOURCES = {
   skills: path.join(REPO_ROOT, "skills"),
   commands: path.join(REPO_ROOT, "commands"),
   rules: path.join(REPO_ROOT, "rules"),
+  mcp: path.join(REPO_ROOT, "mcp"),
 };
 
 // --- CLI parsing -----------------------------------------------------------
@@ -135,6 +137,36 @@ async function copyTree(srcDir, destDir) {
 // --- Adapters --------------------------------------------------------------
 
 /**
+ * Read and JSON-parse every mcp/<name>.json source into { name, def } records.
+ * The server name is the filename without `.json`. Shared by the Claude and
+ * Cursor adapters, which both emit an `mcpServers` map.
+ *
+ * Throws on a malformed JSON file: the merged config cannot be built around a
+ * broken source, and failing the sync is better than writing an invalid
+ * .mcp.json. Semantic validation (transport present, etc.) lives in lint and
+ * doctor, not here — sync only needs the JSON to parse.
+ *
+ * @returns {Promise<Array<{ name: string, def: object }>>} in readdir order;
+ *   toMcpServersJson sorts by name for deterministic output.
+ */
+async function loadMcpServers() {
+  const servers = [];
+  for (const entry of await readDirSafe(SOURCES.mcp)) {
+    if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
+    const name = entry.name.replace(/\.json$/, "");
+    const raw = await fs.readFile(path.join(SOURCES.mcp, entry.name), "utf8");
+    let def;
+    try {
+      def = JSON.parse(raw);
+    } catch (err) {
+      throw new Error(`mcp/${entry.name}: invalid JSON — ${err.message}`);
+    }
+    servers.push({ name, def });
+  }
+  return servers;
+}
+
+/**
  * Sync agents, skills, and commands into .claude/, plus write the plugin
  * manifest. Only the generated subdirectories of .claude/ are wiped — the
  * top-level .claude/ directory may also hold Claude Code's per-user state
@@ -196,9 +228,24 @@ async function syncClaude() {
     }
   }
 
+  // mcp/<name>.json -> .mcp.json  { "mcpServers": { "<name>": {...} } }
+  // .mcp.json is Claude Code's project-scope MCP path — repo root, not under
+  // .claude/. Unlike per-user state files (settings.local.json), agentry treats
+  // it as a fully generated artifact: author servers as mcp/*.json sources,
+  // never by editing .mcp.json directly. Written only when sources exist, and
+  // never deleted — agentry must not clobber a .mcp.json a user hand-authored
+  // before adopting agentry's MCP sync. See docs/decisions.md D20.
+  const claudeServers = await loadMcpServers();
+  if (claudeServers.length) {
+    await writeFile(
+      path.join(REPO_ROOT, ".mcp.json"),
+      toMcpServersJson(claudeServers),
+    );
+  }
+
   const manifest = {
     name: "agentry",
-    version: "0.5.0",
+    version: "0.6.0",
     description:
       "Author your AI coding agents and skills once. Sync them to every harness you use.",
     author: "MANVENDRA-github",
@@ -263,6 +310,15 @@ async function syncCursor() {
       await writeFile(dest, toCursorRule(source));
     }
   }
+
+  // mcp/<name>.json -> .cursor/mcp.json  { "mcpServers": { ... } }
+  // Cursor reads project MCP from .cursor/mcp.json. The whole .cursor/ tree was
+  // wiped at the top of this adapter, so any stale file is already gone — we
+  // simply (re)write when sources exist. Same `mcpServers` shape as Claude.
+  const cursorServers = await loadMcpServers();
+  if (cursorServers.length) {
+    await writeFile(path.join(cursorDir, "mcp.json"), toMcpServersJson(cursorServers));
+  }
 }
 
 /**
@@ -278,6 +334,12 @@ async function syncCursor() {
  *
  * Rules are skipped in v0.3. Codex has its own rules concept that needs
  * dedicated investigation; the mapping is deferred to v0.4.
+ *
+ * MCP servers are skipped. Codex stores them as TOML under [mcp_servers.<name>]
+ * inside the shared config.toml — merging into that file without a TOML
+ * serializer and without clobbering the user's other keys needs its own design.
+ * Claude and Cursor both take a portable `mcpServers` JSON map; Codex does not.
+ * Deferred — see docs/decisions.md D20.
  *
  * Only .codex/agents/skills/ is wiped on sync. The parent .codex/ directory
  * may hold Codex's per-user state (e.g. config.toml) and must be preserved —

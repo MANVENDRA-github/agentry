@@ -4,6 +4,45 @@ All notable changes to agentry are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] — MCP server sync
+
+A new content type: Model Context Protocol server configs, authored once and synced to the harnesses that read a portable `mcpServers` map.
+
+### Added
+
+**Content type:**
+- `mcp/` source directory. One harness-neutral server definition per file (`mcp/<name>.json`); the filename is the server name. Stdio (`command` / `args` / `env`) and remote (`type` / `url`) transports are supported.
+- Claude Code receives all servers merged into `.mcp.json` at the repo root (project scope); Cursor receives the identical `mcpServers` map at `.cursor/mcp.json`. Servers are sorted by name for byte-stable output. Codex is deferred — it stores servers as TOML in a shared `config.toml`.
+- One MCP server (`mcp/filesystem.json`) ships as the pattern proof.
+
+**Modules:**
+- `scripts/mcp-transform.js` — `validateServer` (semantic check) and `toMcpServersJson` (merge + sort + serialize).
+
+**Tooling:**
+- `npm run lint` now validates `mcp/*.json`: valid JSON plus a declared transport, with `args` / `env` shape checks. The section runs only when MCP sources exist.
+- `npm run doctor` reports the MCP server count, confirms the generated `.mcp.json` / `.cursor/mcp.json` contain every source server, and validates each source.
+
+**Docs:**
+- "Authoring an MCP server" in `docs/authoring.md`; the MCP adapter narrative in `docs/architecture.md`; decision D20 in `docs/decisions.md`; contract, module, flow, and test entries in `docs/reference.md`.
+
+### Changed
+
+- `syncClaude` and `syncCursor` gained an MCP step; `loadMcpServers` is shared between them. `.mcp.json` is the first generated artifact written outside a harness namespace directory: it is written only when sources exist and is never deleted — agentry must not clobber a `.mcp.json` a user authored by hand.
+- Plugin manifest version bumped to `0.6.0`.
+
+### Fixed
+
+- **Cross-platform sync determinism (CRLF).** The Cursor and Codex transforms tested `body.startsWith("\n")` to decide whether to insert the blank line after the frontmatter. On a source checked out with Windows line endings (`core.autocrlf=true`), the body started with `\r\n`, the test failed, and an extra blank line was emitted — so `npm run sync` on Windows produced spurious diffs in every generated `.mdc` and `SKILL.md`. The separator test now accepts a leading CRLF, and a new `.gitattributes` (`* text=auto eol=lf`) normalizes the working tree to LF so the transforms always see LF input. Sync is now byte-identical across platforms.
+
+### Tests
+
+- 18 new cases in `tests/mcp-transform.test.js` (65 total): `validateServer` accept/reject paths and `toMcpServersJson` wrapping, verbatim preservation, name sorting, order-independence, no-mutation, formatting, and empty-list behavior.
+
+### Deferred
+
+- **Codex MCP support.** Codex stores servers as TOML under `[mcp_servers.<name>]` in its shared `config.toml`; a safe merge needs a TOML serializer and is deferred. See `docs/decisions.md` D20.
+- **MCP install.** The installers are not extended to place `.mcp.json` / `.cursor/mcp.json` — installing means merging into a user's existing MCP config without clobbering their own servers, which needs its own design. See `docs/decisions.md` D20.
+
 ## [0.5.0] — research and design content
 
 Two universal additions completing the dev-loop core: research before coding, and structural design before implementation. Content-only release with no infrastructure changes.
