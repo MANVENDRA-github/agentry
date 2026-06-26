@@ -38,7 +38,7 @@ The sync engine handles missing source directories gracefully — adding a new c
 - A `SOURCES` map records the absolute path of each source directory.
 - CLI parsing handles `--target <name>`, `--target=<name>`, and `--dry-run`. Unknown targets are reported and skipped.
 - File helpers (`copyFile`, `writeFile`, `rmGenerated`, `copyTree`) are small and respect `--dry-run`. They log relative paths so output is consistent across platforms.
-- Adapters live in their own functions: `syncClaude()` and `syncCursor()` from v0.1, plus `syncCodex()` added in v0.3. Each adapter knows the target harness's expected layout and frontmatter conventions.
+- Adapters live in their own functions: `syncClaude()` and `syncCursor()` from v0.1, `syncCodex()` added in v0.3, and `syncOpenCode()` added in v0.7. Each adapter knows the target harness's expected layout and frontmatter conventions.
 - An `ADAPTERS` map dispatches `--target` values to functions.
 
 A sync run is fully idempotent. Running `npm run sync` twice produces the same tree.
@@ -72,6 +72,24 @@ Codex CLI is the third supported harness (added v0.3). Its skill format is close
 **The `agentry-` prefix.** Every generated skill directory and every `name:` field is prefixed `agentry-`. This avoids collision with user-authored Codex skills: if the user has their own `code-review` skill and agentry ships `code-review`, both would land in `~/.agents/skills/` and Codex would not know which to dispatch. Prefixing makes them distinct (`agentry-code-review` vs `code-review`). Same collision-avoidance pattern as Cursor's `agentry-` prefix on agent filenames.
 
 **Wipe pattern.** Only `.codex/agents/skills/` is wiped on sync. The parent `.codex/` directory may contain Codex's per-user state (notably `config.toml`) and must be preserved. This follows the same "wipe what you own" discipline as `syncClaude`'s partial wipe — see "The settings preservation pattern" below.
+
+## The OpenCode adapter
+
+OpenCode CLI is the fourth supported harness (added v0.7), and the closest of all to Claude Code. Where Cursor and Codex each lack a primitive and force a structural translation, OpenCode has native **agents**, **commands**, and **skills** — all authored as markdown with frontmatter — so the mapping is near-verbatim, the same character as `syncClaude`.
+
+**Where OpenCode content lives.** OpenCode reads from `.opencode/<kind>/` (project) and `~/.config/opencode/<kind>/` (global). The subdirectory names are **plural** in current OpenCode (`agents/`, `commands/`, `skills/`); the singular forms (`agent/`, `command/`) are kept only for backwards compatibility, so agentry emits the plural form. `syncOpenCode` generates into agentry's `.opencode/` namespace mirroring that layout.
+
+**Skill mapping (verbatim).** OpenCode skills use the same Agent Skills format as the source (`name` + `description` frontmatter, body, bundled sibling files), so skills are copied verbatim — including any `scripts/`, `references/`, or `assets/` siblings — exactly as `syncClaude` does.
+
+**Agent mapping (light frontmatter translation).** OpenCode derives an agent's name from its filename and expects a `mode` (`all` | `primary` | `subagent`). `agentToOpenCodeAgent` (in `scripts/opencode-transform.js`) keeps `description`, emits `mode: subagent` (agentry's agents are subagents), and drops `name` (filename-derived), `tools`, and `model`. The last two are dropped rather than translated because their shapes differ: Claude Code's `tools` is an allow-list array while OpenCode's is a permission map, and `model: sonnet` is a Claude Code shorthand, not an OpenCode `provider/model` id. Dropping them lets the subagent inherit safe defaults instead of emitting invalid config. Deriving an OpenCode permission map from the allow-list is a possible future enhancement.
+
+**Command mapping.** OpenCode is the only harness besides Claude Code with user-extensible commands, so agentry's commands reach it. `commandToOpenCode` keeps `description` and drops `argument-hint` (a Claude Code-only field); the body — including `$ARGUMENTS`, which OpenCode also supports — is preserved. The command bodies reference agents by their unprefixed names, which match the unprefixed agent files.
+
+**No `agentry-` prefix.** Unlike Cursor and Codex, OpenCode is treated like Claude Code: its primitives map 1:1, so agentry content keeps its natural shape and "owns" its names (the installer's uninstall is name-based). This also keeps the command→agent references intact. The prefix exists only to disambiguate the *approximations* Cursor and Codex require, where dissimilar primitives are flattened into one namespace; OpenCode has no such flattening.
+
+**Rules and hooks deferred.** OpenCode's rules model is `AGENTS.md` plus the `instructions` config array — a different shape from a per-file rules directory — so rule sync is deferred pending that mapping. Hooks are skipped too: OpenCode has no drop-in hooks directory.
+
+**Wipe pattern.** Only the `agents/`, `commands/`, and `skills/` subdirectories of `.opencode/` are wiped. The parent `.opencode/` may hold the user's `opencode.json` and other state — same "wipe what you own" discipline as `syncClaude` and `syncCodex`.
 
 ## Adding a new harness adapter
 
