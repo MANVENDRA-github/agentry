@@ -1,0 +1,10 @@
+# Normalize all text files to LF in the repository and in the working tree.
+#
+# Without this, a Windows checkout under core.autocrlf=true rewrites source
+# files to CRLF. The sync transforms pass the body through verbatim, so they
+# then emit CRLF-bodied output that differs byte-for-byte from the committed
+# LF artifacts — `npm run sync` reports spurious diffs and CI's clean-tree
+# check would be impossible to satisfy from Windows. Forcing LF everywhere
+# keeps sync byte-deterministic across platforms. Git auto-detects binary
+# files (text=auto) and leaves them untouched; this repo has none today.
+* text=auto eol=lf
