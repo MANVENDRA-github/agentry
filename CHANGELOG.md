@@ -4,6 +4,27 @@ All notable changes to agentry are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0] — maintain-and-ship content
+
+Curated content completing the maintenance and release half of the dev loop — keeping dependencies current, moving the codebase between states safely, and writing a release for the reader who has to act on it. Content-only release; all components language- and framework-neutral (D9), each held to the curation bar (D10).
+
+### Added
+
+**Agents:**
+- `dependency-upgrader` — upgrades dependencies safely and incrementally: one package or group at a time, reads the breaking changes for the versions it crosses, applies the required code changes, and re-runs the build and tests after each. Returns a green build with each upgrade explained, not one giant lockfile bump.
+- `migrator` — plans and executes a migration (data, schema, API version, framework, config format) as small, reversible steps via expand/contract, parallel run, or an adapter, keeping old and new working through the transition. Returns a staged migration with a rollback path, not a big-bang rewrite.
+
+**Skills:**
+- `release-notes` — turn a release's commits and PRs into notes written for the person deciding whether to upgrade: grouped by impact, breaking changes and their migration steps first, not a raw `git log` dump. Completes the commit (`git-commit-craft`) → PR (`pr-describer`) → release authoring story.
+
+**Commands** (Claude Code & OpenCode):
+- `/upgrade-deps`, `/migrate`, `/release-notes` — wrappers for the two new agents and the new skill.
+
+### Changed
+
+- README "What's inside" expanded with the two agents, skill, and three commands; the command count is now fifteen.
+- Plugin manifest version bumped to `0.10.0`.
+
 ## [0.9.0] — loop-coverage content
 
 Curated content closing the universal gaps in the dev loop — end-to-end testing, performance work, context management, and learning capture. Content-only release; no infrastructure changes. All components are language- and framework-neutral (D9), and each earns its place against the curation bar (D10): the additions are the loop stages neither agentry nor the maximalist alternatives covered, not a catalog import.

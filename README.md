@@ -58,6 +58,8 @@ agents/ skills/ commands/ rules/ hooks/ mcp/      ← source of truth (edit thes
 | Agent | `security-reviewer` | Vulnerability analysis through a threat-model lens — injection, access control, secrets, crypto, dependency risk. |
 | Agent | `build-fixer` | Diagnoses and resolves build/compile/CI failures with the minimal fix, not a mask. |
 | Agent | `e2e-runner` | Generates, maintains, and runs end-to-end tests for real user journeys — framework-agnostic, flakiness-averse. |
+| Agent | `dependency-upgrader` | Upgrades dependencies safely and incrementally — one group at a time, breaking changes read, build green after each. |
+| Agent | `migrator` | Plans and executes staged, reversible migrations (data, schema, API, framework) — no big-bang, with a rollback path. |
 | Skill | `tdd-workflow` | Test-first development with explicit red-green-refactor loops. |
 | Skill | `test-writing` | Adds tests to code that already exists, characterizing current behavior. |
 | Skill | `code-review` | Self-review discipline before handing a change to another reviewer. |
@@ -70,8 +72,9 @@ agents/ skills/ commands/ rules/ hooks/ mcp/      ← source of truth (edit thes
 | Skill | `perf-profiling` | Fix a performance problem by measurement — baseline, profile, one change, re-measure — not by guesswork. |
 | Skill | `strategic-compact` | Compact the working context deliberately at task boundaries instead of at an arbitrary auto-truncation point. |
 | Skill | `continuous-learning` | Turn a hard-won session insight into a durable, reusable note before it scrolls away. |
+| Skill | `release-notes` | Turn a release's commits into notes for the reader deciding whether to upgrade — breaking changes first, not a commit dump. |
 
-Twelve slash commands wrap the most-used agents and skills: `/plan`, `/review`, `/debug`, `/commit`, `/handoff`, `/refactor`, `/document`, `/architect`, `/security-review`, `/build-fix`, `/verify`, `/e2e`. They sync to Claude Code and OpenCode — the two harnesses with a user-extensible command primitive — while Cursor and Codex receive the underlying agents and skills only. All four harnesses get the agents and skills behind these commands.
+Fifteen slash commands wrap the most-used agents and skills: `/plan`, `/review`, `/debug`, `/commit`, `/handoff`, `/refactor`, `/document`, `/architect`, `/security-review`, `/build-fix`, `/verify`, `/e2e`, `/upgrade-deps`, `/migrate`, `/release-notes`. They sync to Claude Code and OpenCode — the two harnesses with a user-extensible command primitive — while Cursor and Codex receive the underlying agents and skills only. All four harnesses get the agents and skills behind these commands.
 
 One rule ships as a pattern proof for language-specific content: `rules/typescript/strict-mode.md`. Claude Code receives it verbatim; Cursor receives it as a `.mdc` rule auto-attached to `.ts`/`.tsx` files (via globs derived from its `language` field); Codex receives it as a skill. (OpenCode's rules model — `AGENTS.md` and the `instructions` config — is a separate mapping, deferred.)
 
