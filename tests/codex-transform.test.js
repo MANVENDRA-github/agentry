@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { renameSkill, agentToSkill } from "../scripts/codex-transform.js";
+import { renameSkill, agentToSkill, ruleToSkill } from "../scripts/codex-transform.js";
 
 // --- renameSkill ----------------------------------------------------------
 
@@ -104,4 +104,41 @@ test("agentToSkill drops fields beyond name/description/tools/model too", () => 
 test("agentToSkill returns null when source has no frontmatter", () => {
   const input = "No frontmatter here.\n";
   assert.strictEqual(agentToSkill(input, "agentry-anything"), null);
+});
+
+// --- ruleToSkill ----------------------------------------------------------
+
+test("ruleToSkill keeps name and description, drops rule-specific fields like language", () => {
+  const input =
+    "---\nname: strict-mode\ndescription: Strict mode discipline.\nlanguage: typescript\n---\n\nBody.\n";
+  const output = ruleToSkill(input, "agentry-typescript-strict-mode");
+  assert.match(
+    output,
+    /^---\nname: agentry-typescript-strict-mode\ndescription: Strict mode discipline\.\n---\n\nBody\.\n$/,
+  );
+  assert.doesNotMatch(output, /language\s*:/);
+});
+
+test("ruleToSkill preserves the body verbatim", () => {
+  const body = "# Heading\n\nParagraph.\n\n```\ncode\n```\n";
+  const input = "---\nname: r\ndescription: d here long enough.\nlanguage: go\n---\n\n" + body;
+  const output = ruleToSkill(input, "agentry-go-r");
+  assert.ok(output.endsWith(body), "body should be preserved at end of output");
+});
+
+test("ruleToSkill falls back to the first heading when frontmatter has no description", () => {
+  const input = "# TypeScript strict mode\n\nNo frontmatter at all.\n";
+  const output = ruleToSkill(input, "agentry-typescript-strict-mode");
+  assert.match(output, /description: TypeScript strict mode\n/);
+  // The whole content becomes the body when there is no frontmatter.
+  assert.match(output, /# TypeScript strict mode\n\nNo frontmatter at all\.\n$/);
+});
+
+test("ruleToSkill uses a generic description when there is neither frontmatter nor a heading", () => {
+  const output = ruleToSkill("just prose, no heading.\n", "agentry-x-y");
+  assert.match(output, /description: agentry-x-y rule\n/);
+});
+
+test("ruleToSkill never returns null (rules may be plain markdown)", () => {
+  assert.notStrictEqual(ruleToSkill("anything\n", "agentry-x"), null);
 });

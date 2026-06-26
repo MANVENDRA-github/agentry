@@ -81,12 +81,18 @@ const agentFiles = (await readDirSafe(path.join(REPO_ROOT, "agents")))
 const skillDirs = (await readDirSafe(path.join(REPO_ROOT, "skills")))
   .filter((e) => e.isDirectory())
   .map((e) => e.name);
+const hookFiles = (await readDirSafe(path.join(REPO_ROOT, "hooks")))
+  .filter((e) => e.isFile())
+  .map((e) => e.name);
 
 if (agentFiles.length) ok(`agents/ — ${agentFiles.length} file(s)`);
 else bad("agents/ — no agent files found");
 
 if (skillDirs.length) ok(`skills/ — ${skillDirs.length} skill(s)`);
 else bad("skills/ — no skills found");
+
+if (hookFiles.length) ok(`hooks/ — ${hookFiles.length} file(s)`);
+else info("hooks/ — no hook files (optional)");
 
 // --- Generated -------------------------------------------------------------
 
@@ -109,6 +115,13 @@ for (const skill of skillDirs) {
   }
   if (!(await exists(path.join(REPO_ROOT, ".cursor/rules", `${skill}.mdc`)))) {
     cursorMissing.push(`.cursor/rules/${skill}.mdc`);
+  }
+}
+
+// Hooks sync to Claude Code only (Cursor and Codex have no drop-in hooks dir).
+for (const hook of hookFiles) {
+  if (!(await exists(path.join(REPO_ROOT, ".claude/hooks", hook)))) {
+    claudeMissing.push(`.claude/hooks/${hook}`);
   }
 }
 

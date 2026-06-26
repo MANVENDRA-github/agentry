@@ -51,6 +51,8 @@ agents/   skills/   commands/   rules/        ← source of truth (edit these)
 | Agent | `refactorer` | Restructures code without changing behavior — extract, rename, dedupe, simplify. |
 | Agent | `doc-writer` | Writes and maintains documentation, keeping it accurate to the code. |
 | Agent | `architect` | System and module design decisions: boundaries, responsibilities, trade-offs. |
+| Agent | `security-reviewer` | Vulnerability analysis through a threat-model lens — injection, access control, secrets, crypto, dependency risk. |
+| Agent | `build-fixer` | Diagnoses and resolves build/compile/CI failures with the minimal fix, not a mask. |
 | Skill | `tdd-workflow` | Test-first development with explicit red-green-refactor loops. |
 | Skill | `test-writing` | Adds tests to code that already exists, characterizing current behavior. |
 | Skill | `code-review` | Self-review discipline before handing a change to another reviewer. |
@@ -58,10 +60,14 @@ agents/   skills/   commands/   rules/        ← source of truth (edit these)
 | Skill | `git-commit-craft` | Conventional commit messages that explain why, not just what. |
 | Skill | `search-first` | Search the codebase and dependencies for an existing solution before writing new code. |
 | Skill | `session-handoff` | Structured handoff notes so the next session resumes without re-deriving context. |
+| Skill | `verification-loop` | Prove a change works by running it before declaring it done. |
+| Skill | `api-design` | Design a clean, consistent, protocol-agnostic API contract before implementing it. |
 
-Eight slash commands wrap the most-used agents and skills for Claude Code: `/plan`, `/review`, `/debug`, `/commit`, `/handoff`, `/refactor`, `/document`, `/architect`. They sync to Claude Code only — Cursor and Codex have no user-extensible slash-command primitive — but the underlying agents and skills are available on all three harnesses.
+Eleven slash commands wrap the most-used agents and skills for Claude Code: `/plan`, `/review`, `/debug`, `/commit`, `/handoff`, `/refactor`, `/document`, `/architect`, `/security-review`, `/build-fix`, `/verify`. They sync to Claude Code only — Cursor and Codex have no user-extensible slash-command primitive — but the underlying agents and skills are available on all three harnesses.
 
-One rule ships as a pattern proof for language-specific content: `rules/typescript/strict-mode.md`. Claude Code receives it verbatim; Cursor receives it as a `.mdc` rule.
+One rule ships as a pattern proof for language-specific content: `rules/typescript/strict-mode.md`. Claude Code receives it verbatim; Cursor receives it as a `.mdc` rule auto-attached to `.ts`/`.tsx` files (via globs derived from its `language` field); Codex receives it as a skill.
+
+One hook ships as a pattern proof for the hooks pipeline: `hooks/protect-generated-dirs.js` — a Claude Code `PreToolUse` hook that blocks edits to the generated `.claude/`, `.cursor/`, and `.codex/` directories and points you back at the source file. Hooks sync to Claude Code only; reference it from `settings.json` to enable it.
 
 ## Setup
 
@@ -137,11 +143,12 @@ CI (`.github/workflows/sync-check.yml`) runs three jobs on every push and pull r
 
 ## Status and limitations
 
-v0.5.0. Three harness adapters, seven agents, seven skills, eight commands, and one rule. A few things are deliberately limited today, and the code says so plainly:
+v0.6.0. Three harness adapters, nine agents, nine skills, eleven commands, one rule, and one hook. A few things are deliberately limited today, and the code says so plainly:
 
 - Commands sync to Claude Code only, because Cursor and Codex have no user-extensible slash-command primitive. The agents and skills behind those commands still reach all three harnesses.
-- Cursor rules ship as `alwaysApply: false` (opt-in). Deriving auto-apply globs from a rule's `language` field isn't wired up yet — the field is captured but unused.
-- Codex rules aren't synced. Codex has its own rules model that needs a dedicated mapping; for now the Codex adapter handles skills and agents only.
+- Hooks sync to Claude Code only. Cursor and Codex have no drop-in hooks directory; their event models differ and need a dedicated mapping.
+- Cursor rules auto-attach via globs when the rule's `language` is one of the known mappings (TypeScript, Python, Go, Rust, and others in `LANGUAGE_GLOBS`); unmapped languages still ship as `alwaysApply: false` (opt-in).
+- Codex rules sync as skills (`agentry-<category>-<name>`), since Codex has no rules primitive distinct from skills. A first-class Codex rules model, if one emerges, would replace this approximation.
 
 For the design in depth, see [`docs/architecture.md`](docs/architecture.md) for the adapter pattern, [`docs/authoring.md`](docs/authoring.md) for the authoring guide, [`docs/reference.md`](docs/reference.md) for a per-file and per-module map, and [`docs/decisions.md`](docs/decisions.md) for the numbered design decisions and their trade-offs.
 
