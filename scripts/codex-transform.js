@@ -56,3 +56,29 @@ export function agentToSkill(content, newName) {
   const newRaw = `name: ${newName}\ndescription: ${description}`;
   return `---\n${newRaw}\n---\n${/^\r?\n/.test(body) ? "" : "\n"}${body}`;
 }
+
+/**
+ * Convert an agentry rule into a Codex SKILL.md. Codex has no rules primitive
+ * distinct from skills, so a rule becomes a skill — the same approximation
+ * pattern as agentToSkill. The resulting frontmatter keeps only `name` (set to
+ * `newName`) and `description`; rule-specific fields such as `language` are
+ * dropped. The body is preserved verbatim.
+ *
+ * Unlike agents and skills, a rule may have no frontmatter at all (a plain
+ * markdown guideline). In that case the whole content becomes the body and the
+ * description falls back to the first `# ` heading, then to a generic label —
+ * so the conversion never produces an emptily-described skill.
+ *
+ * @param {string} content - Raw rule .md content.
+ * @param {string} newName - Prefixed name to set (e.g. "agentry-typescript-strict-mode").
+ * @returns {string} New SKILL.md content.
+ */
+export function ruleToSkill(content, newName) {
+  const parsed = parseFrontmatter(content);
+  const body = parsed ? parsed.body : content;
+  const heading = body.match(/^#\s+(.+)$/m);
+  const description =
+    parsed?.fields.description || (heading ? heading[1].trim() : "") || `${newName} rule`;
+  const newRaw = `name: ${newName}\ndescription: ${description}`;
+  return `---\n${newRaw}\n---\n${/^\r?\n/.test(body) ? "" : "\n"}${body}`;
+}

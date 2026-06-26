@@ -12,9 +12,11 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { toCursorRule } from "./cursor-transform.js";
-import { renameSkill, agentToSkill } from "./codex-transform.js";
-import { toMcpServersJson } from "./mcp-transform.js";
+import { parseFrontmatter } from "./frontmatter.js";
+import { toCursorRule, globsForLanguage } from "./cursor-transform.js";
+import { renameSkill, agentToSkill, ruleToSkill } from "./codex-transform.js";
+import { agentToOpenCodeAgent, commandToOpenCode } from "./opencode-transform.js";
+import { toMcpServersJson, toOpenCodeMcpConfig } from "./mcp-transform.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, "..");
@@ -24,12 +26,13 @@ const SOURCES = {
   skills: path.join(REPO_ROOT, "skills"),
   commands: path.join(REPO_ROOT, "commands"),
   rules: path.join(REPO_ROOT, "rules"),
+  hooks: path.join(REPO_ROOT, "hooks"),
   mcp: path.join(REPO_ROOT, "mcp"),
 };
 
 // --- CLI parsing -----------------------------------------------------------
 
-const ALL_TARGETS = ["claude", "cursor", "codex"];
+const ALL_TARGETS = ["claude", "cursor", "codex", "opencode"];
 let DRY_RUN = false;
 let TARGETS = [...ALL_TARGETS];
 const UNKNOWN_TARGETS = [];
@@ -138,16 +141,16 @@ async function copyTree(srcDir, destDir) {
 
 /**
  * Read and JSON-parse every mcp/<name>.json source into { name, def } records.
- * The server name is the filename without `.json`. Shared by the Claude and
- * Cursor adapters, which both emit an `mcpServers` map.
+ * The server name is the filename without `.json`. Shared by the Claude,
+ * Cursor, and OpenCode adapters, which each emit MCP config in their own shape.
  *
  * Throws on a malformed JSON file: the merged config cannot be built around a
- * broken source, and failing the sync is better than writing an invalid
- * .mcp.json. Semantic validation (transport present, etc.) lives in lint and
- * doctor, not here — sync only needs the JSON to parse.
+ * broken source, and failing the sync is better than writing invalid output.
+ * Semantic validation (transport present, etc.) lives in lint and doctor —
+ * sync only needs the JSON to parse.
  *
  * @returns {Promise<Array<{ name: string, def: object }>>} in readdir order;
- *   toMcpServersJson sorts by name for deterministic output.
+ *   the transforms sort by name for deterministic output.
  */
 async function loadMcpServers() {
   const servers = [];
@@ -167,9 +170,9 @@ async function loadMcpServers() {
 }
 
 /**
- * Sync agents, skills, and commands into .claude/, plus write the plugin
- * manifest. Only the generated subdirectories of .claude/ are wiped — the
- * top-level .claude/ directory may also hold Claude Code's per-user state
+ * Sync agents, skills, commands, rules, and hooks into .claude/, plus write the
+ * plugin manifest. Only the generated subdirectories of .claude/ are wiped —
+ * the top-level .claude/ directory may also hold Claude Code's per-user state
  * (e.g. settings.local.json) which must be preserved.
  */
 async function syncClaude() {
@@ -180,6 +183,7 @@ async function syncClaude() {
   await rmGenerated(path.join(claudeDir, "skills"));
   await rmGenerated(path.join(claudeDir, "commands"));
   await rmGenerated(path.join(claudeDir, "rules"));
+  await rmGenerated(path.join(claudeDir, "hooks"));
 
   // agents/<name>.md -> .claude/agents/<name>.md
   for (const entry of await readDirSafe(SOURCES.agents)) {
@@ -228,6 +232,13 @@ async function syncClaude() {
     }
   }
 
+  // hooks/<name>.{sh,js,...} (and any subdirectories) -> .claude/hooks/
+  // Hook scripts are copied verbatim into the install location. Claude Code
+  // runs hooks that the user references from settings.json — agentry ships the
+  // scripts; wiring them into settings is the user's step (the same "wipe what
+  // you own, leave user state alone" discipline keeps us out of settings.json).
+  await copyTree(SOURCES.hooks, path.join(claudeDir, "hooks"));
+
   // mcp/<name>.json -> .mcp.json  { "mcpServers": { "<name>": {...} } }
   // .mcp.json is Claude Code's project-scope MCP path — repo root, not under
   // .claude/. Unlike per-user state files (settings.local.json), agentry treats
@@ -245,7 +256,7 @@ async function syncClaude() {
 
   const manifest = {
     name: "agentry",
-    version: "0.6.0",
+    version: "0.8.0",
     description:
       "Author your AI coding agents and skills once. Sync them to every harness you use.",
     author: "MANVENDRA-github",
@@ -291,10 +302,12 @@ async function syncCursor() {
 
   // rules/<category>/<name>.md -> .cursor/rules/<category>/<name>.mdc
   // Language rules nest under their category. They use the same toCursorRule
-  // transform as skills — `alwaysApply: false` keeps them opt-in for v0.3.
-  // (A future enhancement can derive `globs` from the `language` field for
-  // context-triggered auto-apply.) Cursor discovers .mdc files recursively
-  // inside .cursor/rules/.
+  // transform as skills. When the rule's `language` field (falling back to the
+  // category directory name) maps to known globs, the rule is written with
+  // `globs` + `alwaysApply: false` — Cursor's "Auto Attached" mode, so the rule
+  // activates only when a matching file is in context. Unmapped languages stay
+  // opt-in (`alwaysApply: false`, no globs). Cursor discovers .mdc files
+  // recursively inside .cursor/rules/.
   for (const category of await readDirSafe(SOURCES.rules)) {
     if (!category.isDirectory()) continue;
     const srcCategoryDir = path.join(SOURCES.rules, category.name);
@@ -307,14 +320,15 @@ async function syncCursor() {
         continue;
       }
       const source = await fs.readFile(path.join(srcCategoryDir, entry.name), "utf8");
-      await writeFile(dest, toCursorRule(source));
+      const language = parseFrontmatter(source)?.fields.language || category.name;
+      await writeFile(dest, toCursorRule(source, { globs: globsForLanguage(language) }));
     }
   }
 
   // mcp/<name>.json -> .cursor/mcp.json  { "mcpServers": { ... } }
-  // Cursor reads project MCP from .cursor/mcp.json. The whole .cursor/ tree was
-  // wiped at the top of this adapter, so any stale file is already gone — we
-  // simply (re)write when sources exist. Same `mcpServers` shape as Claude.
+  // Cursor reads project MCP from .cursor/mcp.json, the same `mcpServers` shape
+  // as Claude. The whole .cursor/ tree was wiped at the top of this adapter, so
+  // any stale file is already gone — we simply (re)write when sources exist.
   const cursorServers = await loadMcpServers();
   if (cursorServers.length) {
     await writeFile(path.join(cursorDir, "mcp.json"), toMcpServersJson(cursorServers));
@@ -328,18 +342,21 @@ async function syncCursor() {
  * primitive that matches Claude Code's, so each agent becomes a skill with
  * `tools` and `model` dropped (see codex-transform.js).
  *
+ * Rules are converted to Codex skills too. Codex has no rules primitive
+ * distinct from skills, so each rule becomes a skill (`ruleToSkill`) named
+ * `agentry-<category>-<name>` — the category in the name keeps language rules
+ * from colliding with each other or with converted skills/agents. This is the
+ * same approximation pattern as the agent->skill conversion.
+ *
  * Commands are skipped. Codex does not support user-extensible slash
  * commands; the closest equivalent is `$skill-name` invocation, which the
- * converted skills already provide.
- *
- * Rules are skipped in v0.3. Codex has its own rules concept that needs
- * dedicated investigation; the mapping is deferred to v0.4.
+ * converted skills already provide. Hooks are skipped too — Codex's
+ * notification model differs and has no drop-in hooks directory.
  *
  * MCP servers are skipped. Codex stores them as TOML under [mcp_servers.<name>]
- * inside the shared config.toml — merging into that file without a TOML
- * serializer and without clobbering the user's other keys needs its own design.
- * Claude and Cursor both take a portable `mcpServers` JSON map; Codex does not.
- * Deferred — see docs/decisions.md D20.
+ * inside the shared config.toml — merging there without a TOML serializer and
+ * without clobbering the user's other keys needs its own design. Claude, Cursor,
+ * and OpenCode all take a JSON map; Codex does not. Deferred — see D20.
  *
  * Only .codex/agents/skills/ is wiped on sync. The parent .codex/ directory
  * may hold Codex's per-user state (e.g. config.toml) and must be preserved —
@@ -391,9 +408,115 @@ async function syncCodex() {
     const source = await fs.readFile(path.join(SOURCES.agents, entry.name), "utf8");
     await writeFile(destSkillFile, agentToSkill(source, prefixed));
   }
+
+  // rules/<category>/<name>.md -> .codex/agents/skills/agentry-<category>-<name>/SKILL.md
+  for (const category of await readDirSafe(SOURCES.rules)) {
+    if (!category.isDirectory()) continue;
+    const srcCategoryDir = path.join(SOURCES.rules, category.name);
+    for (const entry of await readDirSafe(srcCategoryDir)) {
+      if (!entry.isFile() || !entry.name.endsWith(".md")) continue;
+      const prefixed = `agentry-${category.name}-${entry.name.replace(/\.md$/, "")}`;
+      const destSkillFile = path.join(codexSkillsDir, prefixed, "SKILL.md");
+      if (DRY_RUN) {
+        console.log(`  [dry] ${rel(destSkillFile)}`);
+        continue;
+      }
+      const source = await fs.readFile(path.join(srcCategoryDir, entry.name), "utf8");
+      await writeFile(destSkillFile, ruleToSkill(source, prefixed));
+    }
+  }
 }
 
-const ADAPTERS = { claude: syncClaude, cursor: syncCursor, codex: syncCodex };
+/**
+ * Sync into .opencode/. OpenCode is the closest harness to Claude Code — it has
+ * native agents, commands, and skills, all authored as markdown read from
+ * `.opencode/<kind>/` (project) and `~/.config/opencode/<kind>/` (global), with
+ * plural subdirectory names. The mapping is therefore near-verbatim:
+ *
+ *   - Agents -> .opencode/agents/<name>.md, frontmatter translated to OpenCode
+ *     shape (`mode: subagent`; `name`/`tools`/`model` dropped — see
+ *     opencode-transform.js for why).
+ *   - Skills -> .opencode/skills/<name>/ copied verbatim (OpenCode uses the
+ *     same Agent Skills format), including any bundled sibling files.
+ *   - Commands -> .opencode/commands/<name>.md, `argument-hint` dropped. Unlike
+ *     Cursor and Codex, OpenCode supports user-extensible commands, so agentry's
+ *     commands reach it. The bodies reference agents by their unprefixed names,
+ *     which match the unprefixed agent files written above.
+ *
+ * No `agentry-` prefix is applied: like Claude Code, OpenCode's primitives map
+ * 1:1, so agentry content keeps its natural shape and "owns" its names (the
+ * installer's uninstall is name-based). Rules and hooks are deferred for
+ * OpenCode — its rules model is AGENTS.md / the `instructions` config, a
+ * separate mapping, and it has no drop-in hooks directory. MCP servers ARE
+ * synced — to opencode.json at the repo root, translated to OpenCode's shape
+ * (see the MCP step below and toOpenCodeMcpConfig).
+ *
+ * Only the generated subdirectories are wiped. The parent .opencode/ may hold
+ * the user's opencode.json and other state — same "wipe what you own" discipline
+ * as syncClaude and syncCodex.
+ */
+async function syncOpenCode() {
+  console.log("\n[opencode]");
+  const ocDir = path.join(REPO_ROOT, ".opencode");
+
+  await rmGenerated(path.join(ocDir, "agents"));
+  await rmGenerated(path.join(ocDir, "commands"));
+  await rmGenerated(path.join(ocDir, "skills"));
+
+  // agents/<name>.md -> .opencode/agents/<name>.md
+  for (const entry of await readDirSafe(SOURCES.agents)) {
+    if (!entry.isFile() || !entry.name.endsWith(".md")) continue;
+    const dest = path.join(ocDir, "agents", entry.name);
+    if (DRY_RUN) {
+      console.log(`  [dry] ${rel(dest)}`);
+      continue;
+    }
+    const source = await fs.readFile(path.join(SOURCES.agents, entry.name), "utf8");
+    await writeFile(dest, agentToOpenCodeAgent(source));
+  }
+
+  // skills/<name>/ -> .opencode/skills/<name>/ (verbatim, incl. sibling files)
+  for (const entry of await readDirSafe(SOURCES.skills)) {
+    if (entry.isDirectory()) {
+      await copyTree(
+        path.join(SOURCES.skills, entry.name),
+        path.join(ocDir, "skills", entry.name),
+      );
+    }
+  }
+
+  // commands/<name>.md -> .opencode/commands/<name>.md
+  for (const entry of await readDirSafe(SOURCES.commands)) {
+    if (!entry.isFile() || !entry.name.endsWith(".md")) continue;
+    const dest = path.join(ocDir, "commands", entry.name);
+    if (DRY_RUN) {
+      console.log(`  [dry] ${rel(dest)}`);
+      continue;
+    }
+    const source = await fs.readFile(path.join(SOURCES.commands, entry.name), "utf8");
+    await writeFile(dest, commandToOpenCode(source));
+  }
+
+  // mcp/<name>.json -> opencode.json  { "$schema": ..., "mcp": { ... } }
+  // OpenCode reads project MCP from opencode.json (repo root), under the `mcp`
+  // key, in its own shape — `type: local|remote`, a single `command` array, an
+  // `environment` map — so this is a real transform, not the pass-through Claude
+  // and Cursor use (see toOpenCodeMcpConfig). Like .mcp.json, opencode.json sits
+  // outside the wiped .opencode/ namespace and may hold the user's other
+  // OpenCode config, so agentry writes it only when sources exist and never
+  // deletes it. See docs/decisions.md D20.
+  const ocServers = await loadMcpServers();
+  if (ocServers.length) {
+    await writeFile(path.join(REPO_ROOT, "opencode.json"), toOpenCodeMcpConfig(ocServers));
+  }
+}
+
+const ADAPTERS = {
+  claude: syncClaude,
+  cursor: syncCursor,
+  codex: syncCodex,
+  opencode: syncOpenCode,
+};
 
 // --- main ------------------------------------------------------------------
 

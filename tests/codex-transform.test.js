@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { renameSkill, agentToSkill } from "../scripts/codex-transform.js";
+import { renameSkill, agentToSkill, ruleToSkill } from "../scripts/codex-transform.js";
 
 // --- renameSkill ----------------------------------------------------------
 
@@ -106,6 +106,43 @@ test("agentToSkill returns null when source has no frontmatter", () => {
   assert.strictEqual(agentToSkill(input, "agentry-anything"), null);
 });
 
+// --- ruleToSkill ----------------------------------------------------------
+
+test("ruleToSkill keeps name and description, drops rule-specific fields like language", () => {
+  const input =
+    "---\nname: strict-mode\ndescription: Strict mode discipline.\nlanguage: typescript\n---\n\nBody.\n";
+  const output = ruleToSkill(input, "agentry-typescript-strict-mode");
+  assert.match(
+    output,
+    /^---\nname: agentry-typescript-strict-mode\ndescription: Strict mode discipline\.\n---\n\nBody\.\n$/,
+  );
+  assert.doesNotMatch(output, /language\s*:/);
+});
+
+test("ruleToSkill preserves the body verbatim", () => {
+  const body = "# Heading\n\nParagraph.\n\n```\ncode\n```\n";
+  const input = "---\nname: r\ndescription: d here long enough.\nlanguage: go\n---\n\n" + body;
+  const output = ruleToSkill(input, "agentry-go-r");
+  assert.ok(output.endsWith(body), "body should be preserved at end of output");
+});
+
+test("ruleToSkill falls back to the first heading when frontmatter has no description", () => {
+  const input = "# TypeScript strict mode\n\nNo frontmatter at all.\n";
+  const output = ruleToSkill(input, "agentry-typescript-strict-mode");
+  assert.match(output, /description: TypeScript strict mode\n/);
+  // The whole content becomes the body when there is no frontmatter.
+  assert.match(output, /# TypeScript strict mode\n\nNo frontmatter at all\.\n$/);
+});
+
+test("ruleToSkill uses a generic description when there is neither frontmatter nor a heading", () => {
+  const output = ruleToSkill("just prose, no heading.\n", "agentry-x-y");
+  assert.match(output, /description: agentry-x-y rule\n/);
+});
+
+test("ruleToSkill never returns null (rules may be plain markdown)", () => {
+  assert.notStrictEqual(ruleToSkill("anything\n", "agentry-x"), null);
+});
+
 // --- CRLF invariance (cross-platform sync determinism) --------------------
 
 test("renameSkill output is invariant to CRLF vs LF line endings (no spurious blank line)", () => {
@@ -123,5 +160,14 @@ test("agentToSkill output is invariant to CRLF vs LF line endings (no spurious b
   assert.strictEqual(
     agentToSkill(crlf, "agentry-planner").replace(/\r\n/g, "\n"),
     agentToSkill(lf, "agentry-planner"),
+  );
+});
+
+test("ruleToSkill output is invariant to CRLF vs LF line endings (no spurious blank line)", () => {
+  const lf = "---\nname: r\ndescription: A rule.\nlanguage: go\n---\n\n# H\n\nBody.\n";
+  const crlf = lf.replace(/\n/g, "\r\n");
+  assert.strictEqual(
+    ruleToSkill(crlf, "agentry-go-r").replace(/\r\n/g, "\n"),
+    ruleToSkill(lf, "agentry-go-r"),
   );
 });
