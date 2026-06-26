@@ -1,9 +1,6 @@
 ---
-name: strict-mode
+name: agentry-typescript-strict-mode
 description: TypeScript strict mode discipline — keep every strict flag on, treat escape hatches as code smells. Apply when working in any TypeScript file. Skip for exploratory spikes or in-progress JavaScript migrations where partial strictness is the temporary goal.
-language: typescript
-globs: **/*.ts,**/*.tsx
-alwaysApply: false
 ---
 
 # TypeScript strict mode

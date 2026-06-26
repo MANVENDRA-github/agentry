@@ -88,7 +88,7 @@ if ($Target -eq 'claude') {
   } else {
     Join-Path (Get-Location).Path '.claude'
   }
-  $SubDirs = @('agents','skills','commands','rules')
+  $SubDirs = @('agents','skills','commands','rules','hooks')
 } elseif ($Target -eq 'cursor') {
   $SrcDir = Join-Path $RepoRoot '.cursor'
   $DestDir = Join-Path (Get-Location).Path '.cursor'

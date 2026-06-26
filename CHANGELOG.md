@@ -4,6 +4,40 @@ All notable changes to agentry are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] — hooks pipeline, command coverage, and completed rule mappings
+
+Closes the gaps the previous releases flagged as deferred: hooks become a real content type, the new agents get command wrappers, and the two rule mappings parked at v0.3 (Cursor auto-apply globs, Codex rules) are now implemented.
+
+### Added
+
+**Content type — hooks:**
+- `hooks/` source directory. `syncClaude` copies hook scripts verbatim into `.claude/hooks/`; the user references a hook from `settings.json` to enable it. Hooks sync to Claude Code only — Cursor and Codex have no drop-in hooks directory. `.claude/hooks/` joined the `syncClaude` wipe list.
+- One pattern-proof hook, `hooks/protect-generated-dirs.js` — a `PreToolUse` guard that blocks Write/Edit-class calls targeting the generated `.claude/`, `.cursor/`, and `.codex/` directories and points the author back at the source file. Zero dependencies; fails open on malformed input.
+
+**Agents:**
+- `security-reviewer` — vulnerability analysis through a threat-model lens (injection, access control, secrets, crypto, dependency risk). The security-specialist counterpart to `code-reviewer`.
+- `build-fixer` — diagnoses and resolves build/compile/CI failures with the minimal fix, fixing the cause rather than masking the symptom.
+
+**Skills:**
+- `verification-loop` — prove a change works by running it before declaring it done.
+- `api-design` — design a clean, consistent, protocol-agnostic API contract before implementing it.
+
+**Commands** (Claude Code only):
+- `/security-review`, `/build-fix` — wrappers for the two new agents.
+- `/verify` — wrapper for the `verification-loop` skill.
+
+### Changed
+
+- **Cursor auto-apply globs (was deferred at v0.3).** Rules whose `language` field (or category directory) maps to a known glob set now sync with `globs` + `alwaysApply: false` — Cursor's "Auto Attached" mode. `LANGUAGE_GLOBS` and `globsForLanguage` added to `scripts/cursor-transform.js`; `toCursorRule` gained an optional `{ globs }` argument (skills are unaffected — no globs passed). The TypeScript strict-mode rule now auto-attaches to `.ts`/`.tsx`.
+- **Codex rules mapping (was deferred at v0.3).** `syncCodex` now converts each rule to a skill (`ruleToSkill`) named `agentry-<category>-<name>` — Codex has no rules primitive distinct from skills.
+- Install scripts (`install.sh`, `install.ps1`) copy `hooks/` for the Claude target. `doctor.js` reports the `hooks/` source and checks the generated copies.
+- Plugin manifest and `package.json` version bumped to `0.6.0`.
+- README "What's inside", architecture doc status table, and the Codex/Cursor adapter notes updated for hooks, the new commands, and the completed rule mappings.
+
+### Tests
+
+- 59 unit tests (up from 47). Added: `toCursorRule` globs injection and no-op-without-globs cases, `globsForLanguage` mapping; `ruleToSkill` field-drop, body preservation, and description-fallback cases.
+
 ## [0.5.0] — research and design content
 
 Two universal additions completing the dev-loop core: research before coding, and structural design before implementation. Content-only release with no infrastructure changes.
