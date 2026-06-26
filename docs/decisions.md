@@ -197,3 +197,25 @@ Companion reading: [`architecture.md`](architecture.md) for how the system is st
 **Mitigation.** Universal content is harder to be wrong about than stack-specific content. The v0.2 components are all generic enough to be useful in a wide range of workflows even if the maintainer hadn't personally needed them yet.
 
 **Revisit if.** Real usage shows specific v0.2 components are never invoked. At that point retire them rather than letting them inflate the library.
+
+## MCP
+
+### D20: MCP servers as a content type — merged JSON map, root `.mcp.json` treated as owned, Codex deferred
+
+**Decision.** MCP server configs are a first-class source type at `mcp/<name>.json`. Each file is the server *definition* object as it appears inside a harness's `mcpServers` map; the filename is the server name. All sources are merged into one `{ "mcpServers": { ... } }` map, sorted by name, and written to `.mcp.json` at the repo root (Claude Code) and `.cursor/mcp.json` (Cursor). Codex is skipped.
+
+**Why a content type at all.** An MCP server is declared identically across harnesses, in different files (`.mcp.json` for Claude Code, `.cursor/mcp.json` for Cursor). That is precisely the hand-maintained-twice-and-drifts problem agentry exists to kill — and unlike agents or skills, the content is structured JSON with no harness-specific prose, so the translation is loss-free. It is the cleanest possible fit for the source-of-truth model.
+
+**Why the filename is the name.** MCP definitions carry no name field of their own — the name is the map key. Deriving it from the filename matches how agents and skills take their identity (D3) and keeps the source file as the bare definition, so it reads the same as the harness-native form minus the wrapper.
+
+**Why a merged output, not one file per source.** This is the first content type whose generated form is a single file aggregating many sources, because that is the shape both harnesses read. The merge is sorted by name so the output is byte-stable regardless of `readdir` order — the same idempotence guarantee (D1, CI clean-tree) every other type gets for free from one-file-per-source.
+
+**Why `.mcp.json` is treated as owned, not merged into.** `.mcp.json` is the only generated artifact that lands outside a harness namespace directory (`.claude/`, `.cursor/`, `.codex/`) — Claude Code reads project MCP from the repo root. agentry treats it as a fully generated artifact: you add servers as `mcp/*.json` sources, never by editing `.mcp.json`. But unlike the namespace directories, agentry does **not** wipe it — it is written only when sources exist and is never deleted, so a `.mcp.json` a user wrote by hand before adopting agentry's MCP sync is not clobbered by an empty `mcp/`. "Wipe what you own" (D5) becomes "write what you own, but don't delete what you might not have created."
+
+**Why Codex is deferred.** Claude Code and Cursor both take a portable `mcpServers` JSON map. Codex stores servers as TOML under `[mcp_servers.<name>]` inside its shared `config.toml` — the same file holding model, approval, and sandbox settings. Emitting that safely needs a TOML serializer and a merge that preserves the user's other keys, which is its own design problem. Deferred, in the same spirit as Codex rules (CHANGELOG v0.3 Deferred).
+
+**Alternative considered — make each source a complete `.mcp.json` fragment** (`{ "mcpServers": { "<name>": {...} } }`). Rejected: it repeats the wrapper in every file and reintroduces a name that must be kept in sync with the filename. The bare-definition form is smaller and has a single source of the name.
+
+**Install is deferred.** Sync produces the native files; the installers (D12) are not extended to place them. Installing MCP means *merging* into a user's existing config (`~/.claude.json`, a project `.mcp.json`, `.cursor/mcp.json`) without destroying servers they added themselves — a stateful merge, not the directory-copy the installers do today. Shipping a copy that silently overwrote a user's MCP file would be the hostile default D5 warns against. Deferred until the merge is designed.
+
+**Revisit if.** Codex MCP support lands (needs the TOML path), or install grows a safe-merge step that can place MCP files without clobbering user servers.

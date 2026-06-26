@@ -4,7 +4,7 @@ This document explains how agentry is structured internally. Read this if you wa
 
 ## Overview
 
-agentry follows a source-of-truth + adapter pattern. Content (agents, skills, commands, rules, hooks) is authored once in top-level directories. A sync script generates harness-specific copies into separate directories — one per supported AI tool. Users install agentry by copying the generated directory for their tool into the location that tool expects.
+agentry follows a source-of-truth + adapter pattern. Content (agents, skills, commands, rules, MCP servers, hooks) is authored once in top-level directories. A sync script generates harness-specific copies into separate directories — one per supported AI tool. Users install agentry by copying the generated directory for their tool into the location that tool expects.
 
 The reason for this shape: maintaining the same `code-reviewer` agent or `tdd-workflow` skill by hand across `.claude/` and `.cursor/` directories means the two copies drift the first time anyone edits one and forgets the other. A sync step makes drift impossible.
 
@@ -27,7 +27,8 @@ Each arrow is one well-defined transformation. Source files never change as a si
 | `skills/` | `<name>/SKILL.md` per skill (plus any siblings the skill bundles). | Active in v0.1 (Claude Code, Cursor); Codex support added in v0.3. |
 | `commands/` | `<name>.md` per slash command. | Planned for v0.2 |
 | `rules/` | `<category>/<rule-name>.md` per rule, namespaced by language (`typescript`, `python`, `go`) or topic (`security`, `performance`). | Active in v0.3 (Claude Code verbatim, Cursor as `.mdc` with `alwaysApply: false`; Codex deferred to v0.4) |
-| `hooks/` | `<name>.{sh,js}` per harness hook. | Planned for v0.3 |
+| `mcp/` | `<name>.json` per MCP server. One harness-neutral server definition; the filename is the server name. | Active in v0.6 (Claude Code `.mcp.json`, Cursor `.cursor/mcp.json`; Codex deferred) |
+| `hooks/` | `<name>.{sh,js}` per harness hook. | Planned |
 
 The sync engine handles missing source directories gracefully — adding a new content type means creating the directory, adding source files, and extending the adapters to know what to do with them.
 
@@ -54,6 +55,10 @@ Each adapter does three things, in order:
 Adapters log each operation so the user sees what changed. Operations are logged with paths relative to the repo root, normalized to forward slashes regardless of OS.
 
 **Rules** (added v0.3) follow the same pattern. `syncClaude` copies them verbatim to `.claude/rules/<category>/<rule-name>.md`. `syncCursor` runs the same `toCursorRule` transform used for skills and writes to `.cursor/rules/<category>/<rule-name>.mdc` — the nested category preserves the source namespace across both harnesses. `syncCodex` skips rules in v0.3; Codex has its own rules concept and the mapping is deferred to v0.4.
+
+**MCP servers** (added v0.6) break the one-source-one-output shape every other content type follows: instead of one generated file per source, all `mcp/<name>.json` sources are *merged* into a single map. `loadMcpServers` reads and JSON-parses each source (throwing on a malformed file so sync fails loudly rather than emitting a broken config), and `toMcpServersJson` (in `scripts/mcp-transform.js`) builds `{ "mcpServers": { "<name>": {...} } }`, sorting by name so the output is byte-stable regardless of `readdir` order. `syncClaude` writes that map to `.mcp.json` at the repo root — Claude Code's project-scope MCP path, the one place this content type lands outside a harness namespace directory. `syncCursor` writes the identical map to `.cursor/mcp.json`. `syncCodex` skips MCP — Codex stores servers as TOML in its shared `config.toml`, which needs its own merge design (deferred). Both harnesses take a portable JSON `mcpServers` map, so the definition passes through unchanged; the only transform is the wrap-and-merge.
+
+Two consequences of `.mcp.json` living at the repo root rather than under `.claude/`: it is written only when at least one source exists (an empty `mcp/` produces no file), and it is never deleted — agentry must not clobber a `.mcp.json` a user wrote by hand before adopting agentry's MCP sync. This is the one generated artifact agentry creates but does not also wipe. See [`decisions.md`](decisions.md) D20.
 
 ## The Codex adapter
 

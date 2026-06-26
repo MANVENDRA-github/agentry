@@ -15,6 +15,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseFrontmatter } from "./frontmatter.js";
+import { validateServer } from "./mcp-transform.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, "..");
@@ -41,6 +42,37 @@ async function exists(p) {
 async function readDirSafe(p) {
   try { return await fs.readdir(p, { withFileTypes: true }); }
   catch { return []; }
+}
+
+/**
+ * Check one generated MCP output file (.mcp.json or .cursor/mcp.json). Unlike
+ * agents/skills — one generated file per source — MCP servers merge into a
+ * single file keyed by server name, so the check parses it and confirms every
+ * source server is present under `mcpServers`.
+ *
+ * @param {string} outPath - absolute path to the generated file.
+ * @param {Array<{ name: string }>} servers - source servers expected present.
+ */
+async function checkMcpOutput(outPath, servers) {
+  const raw = await fs.readFile(outPath, "utf8").catch(() => null);
+  if (raw === null) {
+    bad(`${rel(outPath)} missing — run 'npm run sync'`);
+    return;
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    bad(`${rel(outPath)} is not valid JSON — run 'npm run sync'`);
+    return;
+  }
+  const map = (parsed && parsed.mcpServers) || {};
+  const missing = servers.filter((s) => !(s.name in map)).map((s) => s.name);
+  if (missing.length) {
+    bad(`${rel(outPath)} missing server(s): ${missing.join(", ")} — run 'npm run sync'`);
+  } else {
+    ok(`${rel(outPath)} — ${servers.length} server(s)`);
+  }
 }
 
 /**
@@ -88,6 +120,30 @@ else bad("agents/ — no agent files found");
 if (skillDirs.length) ok(`skills/ — ${skillDirs.length} skill(s)`);
 else bad("skills/ — no skills found");
 
+const mcpFiles = (await readDirSafe(path.join(REPO_ROOT, "mcp")))
+  .filter((e) => e.isFile() && e.name.endsWith(".json"))
+  .map((e) => e.name);
+
+// Parse MCP sources once — reused by the Generated and MCP validation sections.
+const mcpServers = [];
+for (const file of mcpFiles) {
+  const name = file.replace(/\.json$/, "");
+  const raw = await fs.readFile(path.join(REPO_ROOT, "mcp", file), "utf8").catch(() => null);
+  if (raw === null) {
+    mcpServers.push({ name, file, def: null, error: "not readable" });
+  } else {
+    try {
+      mcpServers.push({ name, file, def: JSON.parse(raw), error: null });
+    } catch (err) {
+      mcpServers.push({ name, file, def: null, error: `invalid JSON: ${err.message}` });
+    }
+  }
+}
+
+// MCP is optional content — its absence is informational, not a failure.
+if (mcpFiles.length) ok(`mcp/ — ${mcpFiles.length} server(s)`);
+else info("mcp/ — no MCP servers (optional)");
+
 // --- Generated -------------------------------------------------------------
 
 console.log("\nGenerated:");
@@ -118,6 +174,13 @@ else bad(`.claude/ missing: ${claudeMissing.join(", ")} — run 'npm run sync'`)
 if (cursorMissing.length === 0) ok(".cursor/ matches sources");
 else bad(`.cursor/ missing: ${cursorMissing.join(", ")} — run 'npm run sync'`);
 
+// MCP outputs are merged single files (keyed by server name), not one file per
+// source, so they are checked on their own rather than via the arrays above.
+if (mcpServers.length) {
+  await checkMcpOutput(path.join(REPO_ROOT, ".mcp.json"), mcpServers);
+  await checkMcpOutput(path.join(REPO_ROOT, ".cursor", "mcp.json"), mcpServers);
+}
+
 // --- Frontmatter -----------------------------------------------------------
 
 console.log("\nFrontmatter:");
@@ -141,6 +204,22 @@ for (const skill of skillDirs) {
   const errors = validateFields(parsed?.fields ?? null, SKILL_REQUIRED, skill);
   if (errors.length) bad(`${rel(full)} — ${errors.join("; ")}`);
   else ok(`${rel(full)} — valid`);
+}
+
+// --- MCP servers -----------------------------------------------------------
+
+if (mcpServers.length) {
+  console.log("\nMCP servers:");
+  for (const server of mcpServers) {
+    const full = path.join(REPO_ROOT, "mcp", server.file);
+    if (server.error) {
+      bad(`${rel(full)} — ${server.error}`);
+      continue;
+    }
+    const errors = validateServer(server.def);
+    if (errors.length) bad(`${rel(full)} — ${errors.join("; ")}`);
+    else ok(`${rel(full)} — valid`);
+  }
 }
 
 // --- User install (informational) ------------------------------------------

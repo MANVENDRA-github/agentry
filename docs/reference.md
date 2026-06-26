@@ -12,11 +12,13 @@ For the why behind the shape, see [`decisions.md`](./decisions.md). For high-lev
 | `skills/<name>/SKILL.md` | source | Authored skills (frontmatter + body, may bundle siblings). Edit here. |
 | `commands/<name>.md` | source | Authored slash commands. Edit here. |
 | `rules/<category>/<name>.md` | source | Authored rules, namespaced by category (language identifier or topic). Edit here. |
-| `scripts/sync-harnesses.js` | tool | Sync engine. Generates `.claude/`, `.cursor/`, `.codex/` from sources. |
+| `mcp/<name>.json` | source | Authored MCP server definitions, one per file; filename is the server name. Edit here. |
+| `scripts/sync-harnesses.js` | tool | Sync engine. Generates `.claude/`, `.cursor/`, `.codex/`, `.mcp.json` from sources. |
 | `scripts/frontmatter.js` | tool | Shared YAML-ish frontmatter parser and validation helpers. |
 | `scripts/cursor-transform.js` | tool | `toCursorRule` — source-skill → `.mdc` rule transform. |
 | `scripts/codex-transform.js` | tool | `renameSkill` and `agentToSkill` — Codex adapter transforms. |
-| `scripts/lint-frontmatter.js` | tool | `npm run lint` — fail-on-invalid frontmatter check. |
+| `scripts/mcp-transform.js` | tool | `validateServer` and `toMcpServersJson` — MCP adapter transforms. |
+| `scripts/lint-frontmatter.js` | tool | `npm run lint` — frontmatter (agents/skills) and MCP server validation. |
 | `scripts/doctor.js` | tool | `npm run doctor` — installation health check. |
 | `scripts/install.sh` | installer | POSIX installer (Unix/macOS). |
 | `scripts/install.ps1` | installer | PowerShell installer (Windows). |
@@ -29,6 +31,8 @@ For the why behind the shape, see [`decisions.md`](./decisions.md). For high-lev
 | `.cursor/` | generated | Cursor adapter output. **Do not edit.** Wiped on sync. |
 | `.codex/` | generated | Codex adapter output. **Do not edit.** Wiped on sync. |
 | `.claude-plugin/plugin.json` | generated | Claude Code plugin manifest. Written by `syncClaude`. |
+| `.mcp.json` | generated | Merged MCP server map for Claude Code (project scope, repo root). Written by `syncClaude` when `mcp/` sources exist. **Do not edit.** |
+| `.cursor/mcp.json` | generated | Merged MCP server map for Cursor. Written by `syncCursor`. **Do not edit.** |
 | `.github/workflows/sync-check.yml` | ci | Three-job CI workflow (sync determinism, lint, tests). |
 | `.gitignore` | config | Tracks generated harness dirs; ignores Claude Code per-user state. |
 | `package.json` | config | npm scripts, Node engine requirement, project metadata. |
@@ -39,7 +43,7 @@ For the why behind the shape, see [`decisions.md`](./decisions.md). For high-lev
 
 ## Source-of-truth content types
 
-Four content types ship today. Each lives in a separate top-level directory and has its own frontmatter contract. For the how-to-author flow, see [`authoring.md`](./authoring.md); this section documents the contract only.
+Five content types ship today. Each lives in a separate top-level directory and has its own contract. For the how-to-author flow, see [`authoring.md`](./authoring.md); this section documents the contract only.
 
 ### Agent
 
@@ -71,6 +75,15 @@ Four content types ship today. Each lives in a separate top-level directory and 
 - **Body:** Tight, single-concern guidance. No code samples.
 - **Harness support:** Claude Code (verbatim copy), Cursor (`.mdc` with `alwaysApply: false`). Codex deferred to v0.4.
 
+### MCP server
+
+- **Location:** `mcp/<name>.json`. Filename without `.json` is the server name (the map key in the harness); there is no name field in the file.
+- **Format:** JSON, not frontmatter. The file is the server *definition* object as it appears inside a harness's `mcpServers` map.
+- **Required:** exactly one transport — a non-empty `command` (stdio) or a non-empty `url` (remote).
+- **Optional:** `args` (array) and `env` (object) for stdio servers; `type`, auth `headers`, and any other harness-recognized fields for remote servers — all preserved verbatim.
+- **Harness support:** Claude Code (merged into `.mcp.json` at the repo root) and Cursor (merged into `.cursor/mcp.json`), identical `mcpServers` map. Codex deferred — see [`decisions.md`](./decisions.md) D20.
+- **Secrets:** do not inline tokens; reference an environment variable the harness expands (`"env": { "API_KEY": "${TOKEN}" }`).
+
 ## Module reference (`scripts/`)
 
 ### `sync-harnesses.js`
@@ -79,13 +92,14 @@ The sync entry point. Parses CLI flags, dispatches to one or more adapters, and 
 
 - **No exports.** Side-effect-only script invoked by `npm run sync`.
 - **Internal structure:**
-  - `SOURCES` — map of source directory absolute paths (agents, skills, commands, rules).
+  - `SOURCES` — map of source directory absolute paths (agents, skills, commands, rules, mcp).
   - `ALL_TARGETS` — `["claude", "cursor", "codex"]`.
   - `parseTargets(value)` — splits a comma list of targets, separates valid from unknown.
   - File helpers — `rel`, `exists`, `readDirSafe`, `copyFile`, `writeFile`, `rmGenerated`, `copyTree`. All respect `--dry-run`.
+  - `loadMcpServers()` — reads and JSON-parses every `mcp/<name>.json` into `{ name, def }` records; throws on malformed JSON. Shared by the Claude and Cursor adapters.
   - Adapters — `syncClaude`, `syncCursor`, `syncCodex` (documented inline with JSDoc).
   - `ADAPTERS` — dispatch map from target name to adapter function.
-- **Imports:** `node:fs/promises`, `node:path`, `node:url`, and the two transform modules. No third-party deps.
+- **Imports:** `node:fs/promises`, `node:path`, `node:url`, and the three transform modules. No third-party deps.
 
 ### `frontmatter.js`
 
@@ -110,13 +124,19 @@ Shared frontmatter parser and validation helpers. Three call sites: `lint-frontm
 - **`agentToSkill(content, newName)`** — Strips an agent's frontmatter down to `name` (set to `newName`) and `description`. Drops `tools`, `model`, and any other fields. Body preserved verbatim. Returns `null` if source has no frontmatter.
 - **Imports:** `parseFrontmatter` from `frontmatter.js`.
 
+### `mcp-transform.js`
+
+- **`validateServer(def)`** — Semantic check for one parsed MCP server definition. Returns an array of error strings (empty if valid): rejects non-objects, requires a non-empty `command` or `url`, and rejects a non-array `args` or non-object `env`. Used by `lint` and `doctor`, not by sync.
+- **`toMcpServersJson(servers)`** — Builds the `{ "mcpServers": { <name>: def } }` config consumed by both Claude Code and Cursor from an array of `{ name, def }`. Sorts by name for byte-stable output; does not mutate the input array. Returns pretty-printed JSON with a trailing newline.
+- **Imports:** none. Pure functions over plain objects.
+
 ### `lint-frontmatter.js`
 
-The `npm run lint` script. Iterates every `agents/*.md` and `skills/<name>/SKILL.md`, validates the frontmatter, exits 0 if all pass and 1 if any fail.
+The `npm run lint` script. Iterates every `agents/*.md`, `skills/<name>/SKILL.md`, and `mcp/<name>.json`, validates each, exits 0 if all pass and 1 if any fail.
 
 - **No exports.**
-- **Internal functions:** `lintAgent(file)`, `lintSkill(skillDir)`, plus a local `rel`/`readDirSafe` pair.
-- **Coverage caveat:** lints agents and skills only. Commands and rules are not linted by this script today.
+- **Internal functions:** `lintAgent(file)`, `lintSkill(skillDir)`, `lintMcpServer(file)` (JSON parse + `validateServer`), plus a local `rel`/`readDirSafe` pair.
+- **Coverage caveat:** lints agents, skills, and MCP servers. Commands and rules are not linted by this script today. The MCP section header prints only when `mcp/` has sources.
 
 ### `doctor.js`
 
@@ -124,9 +144,11 @@ The `npm run doctor` script. Reports the health of sources, generated dirs, fron
 
 - **No exports.**
 - **Checks performed:**
-  - Source directories — agents and skills exist and are non-empty.
+  - Source directories — agents and skills exist and are non-empty; MCP server count reported (optional, so absence is informational, not a failure).
   - Generated `.claude/` and `.cursor/` contain the expected file per source. (Note: this script predates v0.3 and does not check `.codex/` output or the rules directory.)
+  - Generated MCP outputs — `.mcp.json` and `.cursor/mcp.json` parse and contain every source server under `mcpServers` (via `checkMcpOutput`).
   - Frontmatter on every agent and skill — own `validateFields` helper, not `frontmatter.js`'s `checkRequired`.
+  - MCP server JSON — each `mcp/<name>.json` parses and passes `validateServer`.
   - User install at `~/.claude/` — lists installed agents and skills, flags missing ones. (Does not check Cursor or Codex installs.)
 - **Exit:** 0 if every required check passes, 1 on failure.
 
@@ -154,7 +176,8 @@ Default behavior with no `--target` flag runs all three adapters in order: `clau
 3. Copy each `skills/<name>/` directory tree (including siblings of `SKILL.md`) to `.claude/skills/<name>/`.
 4. Copy each `commands/<name>.md` to `.claude/commands/<name>.md` verbatim.
 5. For each `rules/<category>/<name>.md`, copy to `.claude/rules/<category>/<name>.md` verbatim.
-6. Write `.claude-plugin/plugin.json` with the inline manifest (name, version, description, author, license).
+6. If `mcp/` has sources, merge them via `loadMcpServers` + `toMcpServersJson` and write `.mcp.json` at the repo root. Skipped entirely when there are no sources; the file is never deleted.
+7. Write `.claude-plugin/plugin.json` with the inline manifest (name, version, description, author, license).
 
 **`syncCursor()`** — runs in this order:
 
@@ -162,13 +185,14 @@ Default behavior with no `--target` flag runs all three adapters in order: `clau
 2. Copy each `agents/<name>.md` to `.cursor/agents/agentry-<name>.md` (prefix avoids collisions with the user's own Cursor agents — see [`decisions.md`](./decisions.md) D6).
 3. For each `skills/<name>/SKILL.md`, run `toCursorRule` and write to `.cursor/rules/<name>.mdc`.
 4. For each `rules/<category>/<name>.md`, run `toCursorRule` and write to `.cursor/rules/<category>/<name>.mdc` (the category subdirectory is preserved).
+5. If `mcp/` has sources, write the same merged `mcpServers` map to `.cursor/mcp.json`. (No write-vs-delete subtlety here — the whole `.cursor/` tree was wiped in step 1.)
 
 **`syncCodex()`** — runs in this order:
 
 1. Wipe `.codex/agents/skills/` only. Does **not** wipe the parent `.codex/` (Codex stores `config.toml` there).
 2. For each `skills/<name>/SKILL.md`, run `renameSkill(content, "agentry-<name>")` and write to `.codex/agents/skills/agentry-<name>/SKILL.md`. Copy any sibling files/directories alongside `SKILL.md` verbatim into the same target directory.
 3. For each `agents/<name>.md`, run `agentToSkill(content, "agentry-<name>")` and write to `.codex/agents/skills/agentry-<name>/SKILL.md`.
-4. Commands and rules are skipped — see [`decisions.md`](./decisions.md) D8 and the CHANGELOG entry for v0.3.
+4. Commands, rules, and MCP servers are skipped — see [`decisions.md`](./decisions.md) D8 (commands), D20 (MCP), and the CHANGELOG entry for v0.3 (rules).
 
 ### Dry-run vs real-run
 
@@ -218,7 +242,7 @@ The script aborts if the generated source directory is missing — it prompts th
 
 ## Frontmatter validation rules (lint)
 
-`npm run lint` validates every agent and skill. The lint script's behavior is:
+`npm run lint` validates every agent, skill, and MCP server. The lint script's behavior is:
 
 ### Per-agent checks (`agents/<file>.md`)
 
@@ -235,11 +259,19 @@ The script aborts if the generated source directory is missing — it prompts th
 - `name` must equal the skill directory name.
 - `description` must be ≥ 20 characters.
 
+### Per-MCP-server checks (`mcp/<name>.json`)
+
+- File must be valid JSON.
+- Must declare a transport: a non-empty `command` (stdio) or `url` (remote).
+- `args`, if present, must be an array; `env`, if present, must be an object.
+- The section runs only when `mcp/` contains `.json` sources.
+
 ### What lint does not check today
 
 - Commands frontmatter.
 - Rules frontmatter.
 - Body content rules (length, voice, marketing tone).
+- Reachability of an MCP server (whether the `command` resolves or the `url` responds) — shape only, not liveness.
 - Frontmatter on generated harness files — only sources are linted.
 
 ## Test inventory
@@ -275,6 +307,13 @@ Covers `renameSkill` and `agentToSkill`:
 - `renameSkill` — name field updated; description and extra fields preserved; body verbatim; CRLF tolerated; null on no-frontmatter input; fields starting with `name` (e.g. `namespace`) untouched.
 - `agentToSkill` — `tools` dropped; `model` dropped; `name` set to new value; description preserved; body verbatim including code blocks and headings; output is a valid SKILL.md structure; extra agent-only fields dropped; null on no-frontmatter input.
 
+### `tests/mcp-transform.test.js` — 18 cases
+
+Covers `validateServer` and `toMcpServersJson`:
+
+- `validateServer` — accepts stdio (command + args), remote (url), and command-plus-env servers; rejects no-transport, empty command, non-array args, non-object env, null, array, and primitive inputs; reports multiple problems at once.
+- `toMcpServersJson` — wraps servers under `mcpServers`; preserves the definition verbatim; sorts by name; output independent of input order; does not mutate the caller's array; 2-space indent with trailing newline; empty list yields an empty map.
+
 ## Configuration reference
 
 ### `package.json` scripts
@@ -298,7 +337,7 @@ Patterns and rationale:
 - `.vscode/`, `.idea/` — editor settings.
 - `.claude/settings.local.json` — Claude Code per-user state (permissions cache). The rest of `.claude/` is tracked; this single file is not.
 
-Generated directories `.claude/`, `.cursor/`, `.codex/`, `.claude-plugin/` are tracked deliberately — contributors browsing the repo on GitHub should see what sync produces. The cardinal rule "do not edit generated dirs" is enforced by convention, not by `.gitignore`.
+Generated directories `.claude/`, `.cursor/`, `.codex/`, `.claude-plugin/`, and the generated `.mcp.json` at the repo root are tracked deliberately — contributors browsing the repo on GitHub should see what sync produces. The cardinal rule "do not edit generated dirs" is enforced by convention, not by `.gitignore`. Because `.mcp.json` is tracked, MCP sources must not inline secrets — reference an environment variable instead (see the MCP server contract above).
 
 ### CI workflow (`.github/workflows/sync-check.yml`)
 
@@ -306,7 +345,7 @@ Three jobs, all on `ubuntu-latest` with Node 20, running on pushes and PRs to `m
 
 1. **`sync-determinism`** — `npm run sync`, then `git status --porcelain` fails the build if sync produced uncommitted changes. Catches the common contribution mistake of editing source without committing regenerated harness files.
 2. **`frontmatter-lint`** — `npm run lint`. Catches malformed agent/skill frontmatter.
-3. **`tests`** — `npm test`. Runs the 47 unit tests.
+3. **`tests`** — `npm test`. Runs the 65 unit tests.
 
 Tests do not block sync-determinism or lint; the three jobs run in parallel. There is no functionality test that exercises the actual sync output against a fixture — sync is verified only by its determinism and by the lint pass on its input.
 
