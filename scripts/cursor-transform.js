@@ -19,7 +19,9 @@ import { parseFrontmatter } from "./frontmatter.js";
  *  - If `content` has frontmatter that already declares `alwaysApply`,
  *    the existing declaration is preserved (no duplication).
  *  - The body is separated from the closing `---` by exactly one blank
- *    line, regardless of how the source was spaced.
+ *    line, regardless of how the source was spaced or line-ended. The
+ *    leading-newline test accepts CRLF as well as LF so a source with
+ *    Windows line endings does not gain a spurious extra blank line.
  *
  * @param {string} content
  * @returns {string}
@@ -32,5 +34,5 @@ export function toCursorRule(content) {
   const { raw, body } = parsed;
   const hasAlwaysApply = /^\s*alwaysApply\s*:/m.test(raw);
   const newFrontmatter = hasAlwaysApply ? raw : `${raw}\nalwaysApply: false`;
-  return `---\n${newFrontmatter}\n---\n${body.startsWith("\n") ? "" : "\n"}${body}`;
+  return `---\n${newFrontmatter}\n---\n${/^\r?\n/.test(body) ? "" : "\n"}${body}`;
 }
