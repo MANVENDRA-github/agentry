@@ -74,3 +74,55 @@ export function toMcpServersJson(servers) {
   }
   return JSON.stringify({ mcpServers }, null, 2) + "\n";
 }
+
+/**
+ * Convert one neutral server definition into OpenCode's shape. Unlike Claude
+ * and Cursor — which read the definition verbatim — OpenCode uses a different
+ * schema: `type: "local" | "remote"`, a single `command` array (command +
+ * args), an `environment` map (not `env`), and an `enabled` flag.
+ *
+ *   stdio:  { command, args?, env? }      -> { type: "local", command: [cmd, ...args], enabled, environment? }
+ *   remote: { url, headers? }             -> { type: "remote", url, enabled, headers? }
+ *
+ * @param {object} def
+ * @returns {object}
+ */
+function toOpenCodeServer(def) {
+  const hasCommand = typeof def.command === "string" && def.command.length > 0;
+  if (hasCommand) {
+    const out = {
+      type: "local",
+      command: [def.command, ...(Array.isArray(def.args) ? def.args : [])],
+      enabled: true,
+    };
+    if (def.env && typeof def.env === "object" && !Array.isArray(def.env)) {
+      out.environment = def.env;
+    }
+    return out;
+  }
+  const out = { type: "remote", url: def.url, enabled: true };
+  if (def.headers && typeof def.headers === "object" && !Array.isArray(def.headers)) {
+    out.headers = def.headers;
+  }
+  return out;
+}
+
+/**
+ * Build the OpenCode `opencode.json` config — `{ "$schema": ..., "mcp": { ... } }` —
+ * from the neutral server list. Each server is translated to OpenCode's shape
+ * (see `toOpenCodeServer`). Servers are sorted by name for byte-stable output,
+ * matching `toMcpServersJson`.
+ *
+ * @param {Array<{ name: string, def: object }>} servers
+ * @returns {string} Pretty-printed JSON with a trailing newline.
+ */
+export function toOpenCodeMcpConfig(servers) {
+  const sorted = [...servers].sort((a, b) => a.name.localeCompare(b.name));
+  const mcp = {};
+  for (const { name, def } of sorted) {
+    mcp[name] = toOpenCodeServer(def);
+  }
+  return (
+    JSON.stringify({ $schema: "https://opencode.ai/config.json", mcp }, null, 2) + "\n"
+  );
+}

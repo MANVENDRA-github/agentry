@@ -13,12 +13,13 @@
   .\scripts\install.ps1 -Target cursor
   .\scripts\install.ps1 -Target codex
   .\scripts\install.ps1 -Target codex -Project
+  .\scripts\install.ps1 -Target opencode
   .\scripts\install.ps1 -Target claude -Uninstall
 #>
 
 [CmdletBinding()]
 param(
-  [ValidateSet('claude','cursor','codex')]
+  [ValidateSet('claude','cursor','codex','opencode')]
   [string]$Target,
 
   [switch]$User,
@@ -39,9 +40,10 @@ Targets:
   claude    Claude Code config (default scope: -User)
   cursor    Cursor project config (default scope: -Project)
   codex     Codex skills (default scope: -User)
+  opencode  OpenCode config (default scope: -User)
 
 Flags:
-  -User         Install to user-level location (claude, codex)
+  -User         Install to user-level location (claude, codex, opencode)
   -Project      Install to current working directory's project location
   -Uninstall    Remove agentry-installed files instead of copying
   -Help         Show this help and exit
@@ -52,6 +54,7 @@ Examples:
   .\scripts\install.ps1 -Target cursor
   .\scripts\install.ps1 -Target codex
   .\scripts\install.ps1 -Target codex -Project
+  .\scripts\install.ps1 -Target opencode
   .\scripts\install.ps1 -Target claude -Uninstall
 '@ | Write-Host
 }
@@ -73,7 +76,7 @@ $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 
 $Scope = if ($User) { 'user' }
          elseif ($Project) { 'project' }
-         elseif ($Target -eq 'claude' -or $Target -eq 'codex') { 'user' }
+         elseif ($Target -eq 'claude' -or $Target -eq 'codex' -or $Target -eq 'opencode') { 'user' }
          else { 'project' }
 
 if ($Target -eq 'cursor' -and $Scope -eq 'user') {
@@ -88,11 +91,20 @@ if ($Target -eq 'claude') {
   } else {
     Join-Path (Get-Location).Path '.claude'
   }
-  $SubDirs = @('agents','skills','commands','rules')
+  $SubDirs = @('agents','skills','commands','rules','hooks')
 } elseif ($Target -eq 'cursor') {
   $SrcDir = Join-Path $RepoRoot '.cursor'
   $DestDir = Join-Path (Get-Location).Path '.cursor'
   $SubDirs = @('agents','rules')
+} elseif ($Target -eq 'opencode') {
+  # opencode: project config is .opencode\; user config is ~\.config\opencode\.
+  $SrcDir = Join-Path $RepoRoot '.opencode'
+  $DestDir = if ($Scope -eq 'user') {
+    Join-Path $env:USERPROFILE '.config\opencode'
+  } else {
+    Join-Path (Get-Location).Path '.opencode'
+  }
+  $SubDirs = @('agents','commands','skills')
 } else {
   # codex: skills live under .agents\skills\ at the destination. The src path
   # points at .codex\agents (one level above the skills\ subdir), so the

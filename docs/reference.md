@@ -12,12 +12,14 @@ For the why behind the shape, see [`decisions.md`](./decisions.md). For high-lev
 | `skills/<name>/SKILL.md` | source | Authored skills (frontmatter + body, may bundle siblings). Edit here. |
 | `commands/<name>.md` | source | Authored slash commands. Edit here. |
 | `rules/<category>/<name>.md` | source | Authored rules, namespaced by category (language identifier or topic). Edit here. |
+| `hooks/<name>.{sh,js}` | source | Authored harness hooks (scripts). Edit here. |
 | `mcp/<name>.json` | source | Authored MCP server definitions, one per file; filename is the server name. Edit here. |
-| `scripts/sync-harnesses.js` | tool | Sync engine. Generates `.claude/`, `.cursor/`, `.codex/`, `.mcp.json` from sources. |
+| `scripts/sync-harnesses.js` | tool | Sync engine. Generates `.claude/`, `.cursor/`, `.codex/`, `.opencode/`, and the MCP config files from sources. |
 | `scripts/frontmatter.js` | tool | Shared YAML-ish frontmatter parser and validation helpers. |
-| `scripts/cursor-transform.js` | tool | `toCursorRule` — source-skill → `.mdc` rule transform. |
-| `scripts/codex-transform.js` | tool | `renameSkill` and `agentToSkill` — Codex adapter transforms. |
-| `scripts/mcp-transform.js` | tool | `validateServer` and `toMcpServersJson` — MCP adapter transforms. |
+| `scripts/cursor-transform.js` | tool | `toCursorRule`, `globsForLanguage` — Cursor `.mdc` rule transform and language-glob mapping. |
+| `scripts/codex-transform.js` | tool | `renameSkill`, `agentToSkill`, `ruleToSkill` — Codex adapter transforms. |
+| `scripts/opencode-transform.js` | tool | `agentToOpenCodeAgent`, `commandToOpenCode` — OpenCode adapter transforms. |
+| `scripts/mcp-transform.js` | tool | `validateServer`, `toMcpServersJson`, `toOpenCodeMcpConfig` — MCP adapter transforms. |
 | `scripts/lint-frontmatter.js` | tool | `npm run lint` — frontmatter (agents/skills) and MCP server validation. |
 | `scripts/doctor.js` | tool | `npm run doctor` — installation health check. |
 | `scripts/install.sh` | installer | POSIX installer (Unix/macOS). |
@@ -30,9 +32,12 @@ For the why behind the shape, see [`decisions.md`](./decisions.md). For high-lev
 | `.claude/` | generated | Claude Code adapter output. **Do not edit.** Wiped on sync. |
 | `.cursor/` | generated | Cursor adapter output. **Do not edit.** Wiped on sync. |
 | `.codex/` | generated | Codex adapter output. **Do not edit.** Wiped on sync. |
+| `.opencode/` | generated | OpenCode adapter output. **Do not edit.** Wiped on sync. |
 | `.claude-plugin/plugin.json` | generated | Claude Code plugin manifest. Written by `syncClaude`. |
 | `.mcp.json` | generated | Merged MCP server map for Claude Code (project scope, repo root). Written by `syncClaude` when `mcp/` sources exist. **Do not edit.** |
 | `.cursor/mcp.json` | generated | Merged MCP server map for Cursor. Written by `syncCursor`. **Do not edit.** |
+| `opencode.json` | generated | MCP config for OpenCode (repo root, `mcp` key, translated shape). Written by `syncOpenCode`. **Do not edit.** |
+| `.gitattributes` | config | Forces LF line endings (`* text=auto eol=lf`) so sync output is byte-identical across platforms. |
 | `.github/workflows/sync-check.yml` | ci | Three-job CI workflow (sync determinism, lint, tests). |
 | `.gitignore` | config | Tracks generated harness dirs; ignores Claude Code per-user state. |
 | `package.json` | config | npm scripts, Node engine requirement, project metadata. |
@@ -43,7 +48,7 @@ For the why behind the shape, see [`decisions.md`](./decisions.md). For high-lev
 
 ## Source-of-truth content types
 
-Five content types ship today. Each lives in a separate top-level directory and has its own contract. For the how-to-author flow, see [`authoring.md`](./authoring.md); this section documents the contract only.
+These content types ship today. Each lives in a separate top-level directory and has its own contract. For the how-to-author flow, see [`authoring.md`](./authoring.md); this section documents the contract only.
 
 ### Agent
 
@@ -78,10 +83,10 @@ Five content types ship today. Each lives in a separate top-level directory and 
 ### MCP server
 
 - **Location:** `mcp/<name>.json`. Filename without `.json` is the server name (the map key in the harness); there is no name field in the file.
-- **Format:** JSON, not frontmatter. The file is the server *definition* object as it appears inside a harness's `mcpServers` map.
+- **Format:** JSON, not frontmatter. The file is the server *definition* object as it appears inside Claude Code / Cursor's `mcpServers` map.
 - **Required:** exactly one transport — a non-empty `command` (stdio) or a non-empty `url` (remote).
-- **Optional:** `args` (array) and `env` (object) for stdio servers; `type`, auth `headers`, and any other harness-recognized fields for remote servers — all preserved verbatim.
-- **Harness support:** Claude Code (merged into `.mcp.json` at the repo root) and Cursor (merged into `.cursor/mcp.json`), identical `mcpServers` map. Codex deferred — see [`decisions.md`](./decisions.md) D20.
+- **Optional:** `args` (array) and `env` (object) for stdio servers; `type`, auth `headers`, and any other harness-recognized fields for remote servers.
+- **Harness support:** Claude Code (`.mcp.json`) and Cursor (`.cursor/mcp.json`) take the `mcpServers` map verbatim; OpenCode (`opencode.json`, `mcp` key) takes a translated shape (`type: local|remote`, `command` array, `environment`, `enabled`). Codex deferred — see [`decisions.md`](./decisions.md) D20.
 - **Secrets:** do not inline tokens; reference an environment variable the harness expands (`"env": { "API_KEY": "${TOKEN}" }`).
 
 ## Module reference (`scripts/`)
@@ -92,14 +97,13 @@ The sync entry point. Parses CLI flags, dispatches to one or more adapters, and 
 
 - **No exports.** Side-effect-only script invoked by `npm run sync`.
 - **Internal structure:**
-  - `SOURCES` — map of source directory absolute paths (agents, skills, commands, rules, mcp).
+  - `SOURCES` — map of source directory absolute paths (agents, skills, commands, rules).
   - `ALL_TARGETS` — `["claude", "cursor", "codex"]`.
   - `parseTargets(value)` — splits a comma list of targets, separates valid from unknown.
   - File helpers — `rel`, `exists`, `readDirSafe`, `copyFile`, `writeFile`, `rmGenerated`, `copyTree`. All respect `--dry-run`.
-  - `loadMcpServers()` — reads and JSON-parses every `mcp/<name>.json` into `{ name, def }` records; throws on malformed JSON. Shared by the Claude and Cursor adapters.
   - Adapters — `syncClaude`, `syncCursor`, `syncCodex` (documented inline with JSDoc).
   - `ADAPTERS` — dispatch map from target name to adapter function.
-- **Imports:** `node:fs/promises`, `node:path`, `node:url`, and the three transform modules. No third-party deps.
+- **Imports:** `node:fs/promises`, `node:path`, `node:url`, and the two transform modules. No third-party deps.
 
 ### `frontmatter.js`
 
@@ -111,23 +115,33 @@ Shared frontmatter parser and validation helpers. Three call sites: `lint-frontm
 
 ### `cursor-transform.js`
 
-- **`toCursorRule(content)`** — Translates source skill content to a Cursor `.mdc` rule. Three behaviors:
-  - No frontmatter in source → wraps content in a new `alwaysApply: false` block.
-  - Frontmatter without `alwaysApply` → appends the field to the existing block.
-  - Frontmatter already declares `alwaysApply` (any value, any indentation) → preserved as-is.
+- **`toCursorRule(content, opts = {})`** — Translates source skill or rule content to a Cursor `.mdc` rule. Behaviors:
+  - No frontmatter in source → wraps content in a new block with the optional `globs` and `alwaysApply: false`.
+  - Frontmatter without `alwaysApply` → appends `globs` (when provided and absent) and `alwaysApply: false` to the existing block.
+  - Frontmatter already declaring `alwaysApply` or `globs` → preserved as-is (no duplication).
   - Body is separated from the closing `---` by exactly one blank line, regardless of source spacing.
+- **`globsForLanguage(language)`** — Returns the comma-separated Cursor glob patterns for a language identifier (from `LANGUAGE_GLOBS`), or `null` if unmapped. Case-insensitive.
+- **`LANGUAGE_GLOBS`** — The language → globs map (TypeScript, Python, Go, Rust, and others).
 - **Imports:** `parseFrontmatter` from `frontmatter.js`.
 
 ### `codex-transform.js`
 
 - **`renameSkill(content, newName)`** — Rewrites only the `name:` line. All other fields and body preserved verbatim. Returns `null` if source has no frontmatter.
 - **`agentToSkill(content, newName)`** — Strips an agent's frontmatter down to `name` (set to `newName`) and `description`. Drops `tools`, `model`, and any other fields. Body preserved verbatim. Returns `null` if source has no frontmatter.
+- **`ruleToSkill(content, newName)`** — Converts a rule to a Codex skill: `name` (set to `newName`) and `description`, dropping rule-specific fields like `language`. Description falls back to the first `# ` heading, then a generic label, so a rule with no frontmatter still produces a described skill. Never returns `null`.
+- **Imports:** `parseFrontmatter` from `frontmatter.js`.
+
+### `opencode-transform.js`
+
+- **`agentToOpenCodeAgent(content)`** — Translates an agent to OpenCode's shape: keeps `description`, adds `mode: subagent`, drops `name` (filename-derived), `tools`, and `model`. Body preserved verbatim. Returns `null` if source has no frontmatter.
+- **`commandToOpenCode(content)`** — Keeps `description`, drops `argument-hint`. Body — including `$ARGUMENTS` — preserved verbatim. Returns `null` if source has no frontmatter.
 - **Imports:** `parseFrontmatter` from `frontmatter.js`.
 
 ### `mcp-transform.js`
 
 - **`validateServer(def)`** — Semantic check for one parsed MCP server definition. Returns an array of error strings (empty if valid): rejects non-objects, requires a non-empty `command` or `url`, and rejects a non-array `args` or non-object `env`. Used by `lint` and `doctor`, not by sync.
-- **`toMcpServersJson(servers)`** — Builds the `{ "mcpServers": { <name>: def } }` config consumed by both Claude Code and Cursor from an array of `{ name, def }`. Sorts by name for byte-stable output; does not mutate the input array. Returns pretty-printed JSON with a trailing newline.
+- **`toMcpServersJson(servers)`** — Builds `{ "mcpServers": { <name>: def } }` (Claude Code `.mcp.json` and Cursor `.cursor/mcp.json`) from an array of `{ name, def }`. Sorts by name; does not mutate the input. Trailing newline.
+- **`toOpenCodeMcpConfig(servers)`** — Builds `{ "$schema": ..., "mcp": { <name>: openCodeDef } }` (OpenCode `opencode.json`), translating each server to OpenCode's shape (`type: local|remote`, `command` array, `environment`, `enabled`). Sorts by name.
 - **Imports:** none. Pure functions over plain objects.
 
 ### `lint-frontmatter.js`
@@ -144,12 +158,12 @@ The `npm run doctor` script. Reports the health of sources, generated dirs, fron
 
 - **No exports.**
 - **Checks performed:**
-  - Source directories — agents and skills exist and are non-empty; MCP server count reported (optional, so absence is informational, not a failure).
-  - Generated `.claude/` and `.cursor/` contain the expected file per source. (Note: this script predates v0.3 and does not check `.codex/` output or the rules directory.)
-  - Generated MCP outputs — `.mcp.json` and `.cursor/mcp.json` parse and contain every source server under `mcpServers` (via `checkMcpOutput`).
+  - Source directories — agents and skills exist and are non-empty; hook and MCP-server counts reported (both optional, so absence is informational).
+  - Generated `.claude/`, `.cursor/`, and `.opencode/` contain the expected file per source.
+  - Generated MCP outputs — `.mcp.json`, `.cursor/mcp.json` (`mcpServers` key), and `opencode.json` (`mcp` key) parse and contain every source server (via `checkMcpOutput`).
   - Frontmatter on every agent and skill — own `validateFields` helper, not `frontmatter.js`'s `checkRequired`.
   - MCP server JSON — each `mcp/<name>.json` parses and passes `validateServer`.
-  - User install at `~/.claude/` — lists installed agents and skills, flags missing ones. (Does not check Cursor or Codex installs.)
+  - User install at `~/.claude/` — lists installed agents and skills, flags missing ones. (Does not check Cursor, Codex, or OpenCode installs.)
 - **Exit:** 0 if every required check passes, 1 on failure.
 
 ## Sync flow walkthrough
@@ -165,7 +179,7 @@ Flags recognized:
 - Unknown flags set `process.exitCode = 1` and are reported to stderr but do not abort.
 - Unknown targets are collected and reported at the start of `main()` but do not abort the run.
 
-Default behavior with no `--target` flag runs all three adapters in order: `claude`, `cursor`, `codex`.
+Default behavior with no `--target` flag runs all four adapters in order: `claude`, `cursor`, `codex`, `opencode`.
 
 ### Per-adapter steps
 
@@ -175,8 +189,8 @@ Default behavior with no `--target` flag runs all three adapters in order: `clau
 2. Copy each `agents/<name>.md` to `.claude/agents/<name>.md` verbatim.
 3. Copy each `skills/<name>/` directory tree (including siblings of `SKILL.md`) to `.claude/skills/<name>/`.
 4. Copy each `commands/<name>.md` to `.claude/commands/<name>.md` verbatim.
-5. For each `rules/<category>/<name>.md`, copy to `.claude/rules/<category>/<name>.md` verbatim.
-6. If `mcp/` has sources, merge them via `loadMcpServers` + `toMcpServersJson` and write `.mcp.json` at the repo root. Skipped entirely when there are no sources; the file is never deleted.
+5. For each `rules/<category>/<name>.md`, copy to `.claude/rules/<category>/<name>.md` verbatim. Then copy the `hooks/` tree to `.claude/hooks/`.
+6. If `mcp/` has sources, merge them via `loadMcpServers` + `toMcpServersJson` and write `.mcp.json` at the repo root (`mcpServers` map). Written only when sources exist; never deleted.
 7. Write `.claude-plugin/plugin.json` with the inline manifest (name, version, description, author, license).
 
 **`syncCursor()`** — runs in this order:
@@ -184,15 +198,23 @@ Default behavior with no `--target` flag runs all three adapters in order: `clau
 1. Wipe the entire `.cursor/` directory. Cursor stores no per-user state in this tree.
 2. Copy each `agents/<name>.md` to `.cursor/agents/agentry-<name>.md` (prefix avoids collisions with the user's own Cursor agents — see [`decisions.md`](./decisions.md) D6).
 3. For each `skills/<name>/SKILL.md`, run `toCursorRule` and write to `.cursor/rules/<name>.mdc`.
-4. For each `rules/<category>/<name>.md`, run `toCursorRule` and write to `.cursor/rules/<category>/<name>.mdc` (the category subdirectory is preserved).
-5. If `mcp/` has sources, write the same merged `mcpServers` map to `.cursor/mcp.json`. (No write-vs-delete subtlety here — the whole `.cursor/` tree was wiped in step 1.)
+4. For each `rules/<category>/<name>.md`, run `toCursorRule` (with `language`-derived globs) and write to `.cursor/rules/<category>/<name>.mdc` (the category subdirectory is preserved).
+5. If `mcp/` has sources, write the same `mcpServers` map to `.cursor/mcp.json` (the whole `.cursor/` tree was wiped in step 1, so there is no never-delete subtlety here).
 
 **`syncCodex()`** — runs in this order:
 
 1. Wipe `.codex/agents/skills/` only. Does **not** wipe the parent `.codex/` (Codex stores `config.toml` there).
 2. For each `skills/<name>/SKILL.md`, run `renameSkill(content, "agentry-<name>")` and write to `.codex/agents/skills/agentry-<name>/SKILL.md`. Copy any sibling files/directories alongside `SKILL.md` verbatim into the same target directory.
-3. For each `agents/<name>.md`, run `agentToSkill(content, "agentry-<name>")` and write to `.codex/agents/skills/agentry-<name>/SKILL.md`.
-4. Commands, rules, and MCP servers are skipped — see [`decisions.md`](./decisions.md) D8 (commands), D20 (MCP), and the CHANGELOG entry for v0.3 (rules).
+3. For each `agents/<name>.md`, run `agentToSkill(content, "agentry-<name>")`; for each rule, run `ruleToSkill(...)` (since v0.6). Both write to `.codex/agents/skills/agentry-<name>/SKILL.md`.
+4. Commands, hooks, and MCP are skipped — see [`decisions.md`](./decisions.md) D8 (commands) and D20 (MCP).
+
+**`syncOpenCode()`** — runs in this order:
+
+1. Wipe `.opencode/agents/`, `.opencode/commands/`, `.opencode/skills/`. Does **not** wipe the parent `.opencode/` (it may hold the user's `opencode.json`).
+2. For each `agents/<name>.md`, run `agentToOpenCodeAgent` and write to `.opencode/agents/<name>.md` (no prefix — primitives map 1:1).
+3. Copy each `skills/<name>/` tree verbatim to `.opencode/skills/<name>/`.
+4. For each `commands/<name>.md`, run `commandToOpenCode` and write to `.opencode/commands/<name>.md`.
+5. If `mcp/` has sources, run `toOpenCodeMcpConfig` and write `opencode.json` at the repo root (`mcp` key, translated shape). Written only when sources exist; never deleted. Rules and hooks are deferred.
 
 ### Dry-run vs real-run
 
@@ -242,7 +264,7 @@ The script aborts if the generated source directory is missing — it prompts th
 
 ## Frontmatter validation rules (lint)
 
-`npm run lint` validates every agent, skill, and MCP server. The lint script's behavior is:
+`npm run lint` validates every agent and skill. The lint script's behavior is:
 
 ### Per-agent checks (`agents/<file>.md`)
 
@@ -259,26 +281,18 @@ The script aborts if the generated source directory is missing — it prompts th
 - `name` must equal the skill directory name.
 - `description` must be ≥ 20 characters.
 
-### Per-MCP-server checks (`mcp/<name>.json`)
-
-- File must be valid JSON.
-- Must declare a transport: a non-empty `command` (stdio) or `url` (remote).
-- `args`, if present, must be an array; `env`, if present, must be an object.
-- The section runs only when `mcp/` contains `.json` sources.
-
 ### What lint does not check today
 
 - Commands frontmatter.
 - Rules frontmatter.
 - Body content rules (length, voice, marketing tone).
-- Reachability of an MCP server (whether the `command` resolves or the `url` responds) — shape only, not liveness.
 - Frontmatter on generated harness files — only sources are linted.
 
 ## Test inventory
 
 Tests are run by `npm test` using Node's built-in `node:test` runner. No external test framework is installed.
 
-### `tests/frontmatter.test.js` — 23 cases
+### `tests/frontmatter.test.js` — 24 cases
 
 Covers `parseFrontmatter`, `checkRequired`, `checkDescription`:
 
@@ -286,9 +300,9 @@ Covers `parseFrontmatter`, `checkRequired`, `checkDescription`:
 - `checkRequired` — all-present returns `[]`; missing keys reported; empty string treated as missing; output order matches `requiredKeys`; extra fields ignored.
 - `checkDescription` — null for ≥ 20 chars; null at exactly 20; `too short` for shorter; `missing or empty` for `undefined`/empty; custom `minLength` honored.
 
-### `tests/cursor-transform.test.js` — 9 cases
+### `tests/cursor-transform.test.js` — 17 cases
 
-Covers `toCursorRule`:
+Covers `toCursorRule`, `globsForLanguage`:
 
 - No-frontmatter input → wrapped with new `alwaysApply: false` block.
 - Frontmatter without `alwaysApply` → field appended.
@@ -299,20 +313,34 @@ Covers `toCursorRule`:
 - Existing blank line preserved.
 - With-blank-line and no-blank-line sources produce identical output (normalization).
 - Additional frontmatter fields (`tags`, etc.) preserved verbatim.
+- `globs` injected before `alwaysApply` when provided; not duplicated when already declared; null globs ignored; added in the no-frontmatter case; absent when no opts passed (skills unaffected).
+- `globsForLanguage` maps known languages case-insensitively and returns `null` for unknown or missing.
+- CRLF invariance — a CRLF source produces the same logical output as its LF twin (no spurious blank line).
 
-### `tests/codex-transform.test.js` — 13 cases
+### `tests/codex-transform.test.js` — 22 cases
 
-Covers `renameSkill` and `agentToSkill`:
+Covers `renameSkill`, `agentToSkill`, `ruleToSkill`:
 
 - `renameSkill` — name field updated; description and extra fields preserved; body verbatim; CRLF tolerated; null on no-frontmatter input; fields starting with `name` (e.g. `namespace`) untouched.
 - `agentToSkill` — `tools` dropped; `model` dropped; `name` set to new value; description preserved; body verbatim including code blocks and headings; output is a valid SKILL.md structure; extra agent-only fields dropped; null on no-frontmatter input.
+- `ruleToSkill` — `language` dropped, name/description kept; body verbatim; description falls back to the first heading, then a generic label; never returns `null`.
+- CRLF invariance — `renameSkill`, `agentToSkill`, and `ruleToSkill` produce the same logical output for a CRLF source as its LF twin (no spurious blank line).
 
-### `tests/mcp-transform.test.js` — 18 cases
+### `tests/opencode-transform.test.js` — 10 cases
 
-Covers `validateServer` and `toMcpServersJson`:
+Covers `agentToOpenCodeAgent`, `commandToOpenCode`:
+
+- `agentToOpenCodeAgent` — `mode: subagent` set and `description` kept; `name`/`tools`/`model` dropped; body verbatim including code blocks; a colon-containing description preserved; null on no-frontmatter input.
+- `commandToOpenCode` — `description` kept and `argument-hint` dropped; `$ARGUMENTS` preserved in the body; null on no-frontmatter input.
+- CRLF invariance — both transforms produce the same logical output for a CRLF source as its LF twin.
+
+### `tests/mcp-transform.test.js` — 25 cases
+
+Covers `validateServer`, `toMcpServersJson`, `toOpenCodeMcpConfig`:
 
 - `validateServer` — accepts stdio (command + args), remote (url), and command-plus-env servers; rejects no-transport, empty command, non-array args, non-object env, null, array, and primitive inputs; reports multiple problems at once.
-- `toMcpServersJson` — wraps servers under `mcpServers`; preserves the definition verbatim; sorts by name; output independent of input order; does not mutate the caller's array; 2-space indent with trailing newline; empty list yields an empty map.
+- `toMcpServersJson` — wraps under `mcpServers`; preserves the definition verbatim; sorts by name; output independent of input order; does not mutate the caller's array; 2-space indent with trailing newline; empty list yields an empty map.
+- `toOpenCodeMcpConfig` — wraps under `$schema` + `mcp`; maps stdio to `type: local` with a `command` array and folds `env` into `environment`; maps remote to `type: remote` with `url` + `headers`; sorts by name; trailing newline.
 
 ## Configuration reference
 
@@ -337,7 +365,7 @@ Patterns and rationale:
 - `.vscode/`, `.idea/` — editor settings.
 - `.claude/settings.local.json` — Claude Code per-user state (permissions cache). The rest of `.claude/` is tracked; this single file is not.
 
-Generated directories `.claude/`, `.cursor/`, `.codex/`, `.claude-plugin/`, and the generated `.mcp.json` at the repo root are tracked deliberately — contributors browsing the repo on GitHub should see what sync produces. The cardinal rule "do not edit generated dirs" is enforced by convention, not by `.gitignore`. Because `.mcp.json` is tracked, MCP sources must not inline secrets — reference an environment variable instead (see the MCP server contract above).
+Generated directories `.claude/`, `.cursor/`, `.codex/`, `.claude-plugin/` are tracked deliberately — contributors browsing the repo on GitHub should see what sync produces. The cardinal rule "do not edit generated dirs" is enforced by convention, not by `.gitignore`.
 
 ### CI workflow (`.github/workflows/sync-check.yml`)
 
@@ -345,7 +373,7 @@ Three jobs, all on `ubuntu-latest` with Node 20, running on pushes and PRs to `m
 
 1. **`sync-determinism`** — `npm run sync`, then `git status --porcelain` fails the build if sync produced uncommitted changes. Catches the common contribution mistake of editing source without committing regenerated harness files.
 2. **`frontmatter-lint`** — `npm run lint`. Catches malformed agent/skill frontmatter.
-3. **`tests`** — `npm test`. Runs the 65 unit tests.
+3. **`tests`** — `npm test`. Runs the 98 unit tests.
 
 Tests do not block sync-determinism or lint; the three jobs run in parallel. There is no functionality test that exercises the actual sync output against a fixture — sync is verified only by its determinism and by the lint pass on its input.
 

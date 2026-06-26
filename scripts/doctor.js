@@ -45,15 +45,17 @@ async function readDirSafe(p) {
 }
 
 /**
- * Check one generated MCP output file (.mcp.json or .cursor/mcp.json). Unlike
- * agents/skills — one generated file per source — MCP servers merge into a
- * single file keyed by server name, so the check parses it and confirms every
- * source server is present under `mcpServers`.
+ * Check one generated MCP output file. Claude/Cursor key servers under
+ * `mcpServers`; OpenCode keys them under `mcp` in opencode.json. Unlike
+ * agents/skills (one generated file per source), MCP servers merge into a
+ * single file, so the check parses it and confirms every source server is
+ * present under the given top-level key.
  *
  * @param {string} outPath - absolute path to the generated file.
  * @param {Array<{ name: string }>} servers - source servers expected present.
+ * @param {string} key - "mcpServers" (Claude/Cursor) or "mcp" (OpenCode).
  */
-async function checkMcpOutput(outPath, servers) {
+async function checkMcpOutput(outPath, servers, key) {
   const raw = await fs.readFile(outPath, "utf8").catch(() => null);
   if (raw === null) {
     bad(`${rel(outPath)} missing — run 'npm run sync'`);
@@ -66,7 +68,7 @@ async function checkMcpOutput(outPath, servers) {
     bad(`${rel(outPath)} is not valid JSON — run 'npm run sync'`);
     return;
   }
-  const map = (parsed && parsed.mcpServers) || {};
+  const map = (parsed && parsed[key]) || {};
   const missing = servers.filter((s) => !(s.name in map)).map((s) => s.name);
   if (missing.length) {
     bad(`${rel(outPath)} missing server(s): ${missing.join(", ")} — run 'npm run sync'`);
@@ -113,12 +115,18 @@ const agentFiles = (await readDirSafe(path.join(REPO_ROOT, "agents")))
 const skillDirs = (await readDirSafe(path.join(REPO_ROOT, "skills")))
   .filter((e) => e.isDirectory())
   .map((e) => e.name);
+const hookFiles = (await readDirSafe(path.join(REPO_ROOT, "hooks")))
+  .filter((e) => e.isFile())
+  .map((e) => e.name);
 
 if (agentFiles.length) ok(`agents/ — ${agentFiles.length} file(s)`);
 else bad("agents/ — no agent files found");
 
 if (skillDirs.length) ok(`skills/ — ${skillDirs.length} skill(s)`);
 else bad("skills/ — no skills found");
+
+if (hookFiles.length) ok(`hooks/ — ${hookFiles.length} file(s)`);
+else info("hooks/ — no hook files (optional)");
 
 const mcpFiles = (await readDirSafe(path.join(REPO_ROOT, "mcp")))
   .filter((e) => e.isFile() && e.name.endsWith(".json"))
@@ -149,6 +157,7 @@ else info("mcp/ — no MCP servers (optional)");
 console.log("\nGenerated:");
 let claudeMissing = [];
 let cursorMissing = [];
+let opencodeMissing = [];
 
 for (const file of agentFiles) {
   if (!(await exists(path.join(REPO_ROOT, ".claude/agents", file)))) {
@@ -156,6 +165,9 @@ for (const file of agentFiles) {
   }
   if (!(await exists(path.join(REPO_ROOT, ".cursor/agents", `agentry-${file}`)))) {
     cursorMissing.push(`.cursor/agents/agentry-${file}`);
+  }
+  if (!(await exists(path.join(REPO_ROOT, ".opencode/agents", file)))) {
+    opencodeMissing.push(`.opencode/agents/${file}`);
   }
 }
 
@@ -166,6 +178,16 @@ for (const skill of skillDirs) {
   if (!(await exists(path.join(REPO_ROOT, ".cursor/rules", `${skill}.mdc`)))) {
     cursorMissing.push(`.cursor/rules/${skill}.mdc`);
   }
+  if (!(await exists(path.join(REPO_ROOT, ".opencode/skills", skill, "SKILL.md")))) {
+    opencodeMissing.push(`.opencode/skills/${skill}/SKILL.md`);
+  }
+}
+
+// Hooks sync to Claude Code only (Cursor and Codex have no drop-in hooks dir).
+for (const hook of hookFiles) {
+  if (!(await exists(path.join(REPO_ROOT, ".claude/hooks", hook)))) {
+    claudeMissing.push(`.claude/hooks/${hook}`);
+  }
 }
 
 if (claudeMissing.length === 0) ok(".claude/ matches sources");
@@ -174,11 +196,16 @@ else bad(`.claude/ missing: ${claudeMissing.join(", ")} — run 'npm run sync'`)
 if (cursorMissing.length === 0) ok(".cursor/ matches sources");
 else bad(`.cursor/ missing: ${cursorMissing.join(", ")} — run 'npm run sync'`);
 
-// MCP outputs are merged single files (keyed by server name), not one file per
-// source, so they are checked on their own rather than via the arrays above.
+if (opencodeMissing.length === 0) ok(".opencode/ matches sources");
+else bad(`.opencode/ missing: ${opencodeMissing.join(", ")} — run 'npm run sync'`);
+
+// MCP outputs are merged single files (keyed by server name), checked on their
+// own rather than via the per-source arrays above. Claude/Cursor use the
+// `mcpServers` key; OpenCode uses `mcp` in opencode.json.
 if (mcpServers.length) {
-  await checkMcpOutput(path.join(REPO_ROOT, ".mcp.json"), mcpServers);
-  await checkMcpOutput(path.join(REPO_ROOT, ".cursor", "mcp.json"), mcpServers);
+  await checkMcpOutput(path.join(REPO_ROOT, ".mcp.json"), mcpServers, "mcpServers");
+  await checkMcpOutput(path.join(REPO_ROOT, ".cursor", "mcp.json"), mcpServers, "mcpServers");
+  await checkMcpOutput(path.join(REPO_ROOT, "opencode.json"), mcpServers, "mcp");
 }
 
 // --- Frontmatter -----------------------------------------------------------

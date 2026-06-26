@@ -1,6 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { validateServer, toMcpServersJson } from "../scripts/mcp-transform.js";
+import {
+  validateServer,
+  toMcpServersJson,
+  toOpenCodeMcpConfig,
+} from "../scripts/mcp-transform.js";
 
 // --- validateServer -------------------------------------------------------
 
@@ -114,4 +118,65 @@ test("toMcpServersJson pretty-prints with 2-space indent and a trailing newline"
 
 test("toMcpServersJson on an empty list produces an empty mcpServers map", () => {
   assert.equal(toMcpServersJson([]), '{\n  "mcpServers": {}\n}\n');
+});
+
+// --- toOpenCodeMcpConfig ---------------------------------------------------
+
+test("toOpenCodeMcpConfig wraps servers under $schema + mcp", () => {
+  const out = JSON.parse(toOpenCodeMcpConfig([{ name: "fs", def: { command: "npx" } }]));
+  assert.equal(out.$schema, "https://opencode.ai/config.json");
+  assert.ok(out.mcp.fs, "server should be under the mcp key");
+});
+
+test("toOpenCodeMcpConfig maps a stdio server to type local with a command array", () => {
+  const out = JSON.parse(
+    toOpenCodeMcpConfig([
+      { name: "fs", def: { command: "npx", args: ["-y", "@scope/server"] } },
+    ]),
+  );
+  assert.deepStrictEqual(out.mcp.fs, {
+    type: "local",
+    command: ["npx", "-y", "@scope/server"],
+    enabled: true,
+  });
+});
+
+test("toOpenCodeMcpConfig folds env into the OpenCode 'environment' key", () => {
+  const out = JSON.parse(
+    toOpenCodeMcpConfig([{ name: "s", def: { command: "srv", env: { API_KEY: "x" } } }]),
+  );
+  assert.deepStrictEqual(out.mcp.s.environment, { API_KEY: "x" });
+});
+
+test("toOpenCodeMcpConfig handles a command with no args (command array of one)", () => {
+  const out = JSON.parse(toOpenCodeMcpConfig([{ name: "s", def: { command: "srv" } }]));
+  assert.deepStrictEqual(out.mcp.s.command, ["srv"]);
+});
+
+test("toOpenCodeMcpConfig maps a remote server to type remote with url + headers", () => {
+  const out = JSON.parse(
+    toOpenCodeMcpConfig([
+      { name: "r", def: { type: "http", url: "https://x/mcp", headers: { A: "b" } } },
+    ]),
+  );
+  assert.deepStrictEqual(out.mcp.r, {
+    type: "remote",
+    url: "https://x/mcp",
+    enabled: true,
+    headers: { A: "b" },
+  });
+});
+
+test("toOpenCodeMcpConfig sorts servers by name for deterministic output", () => {
+  const out = JSON.parse(
+    toOpenCodeMcpConfig([
+      { name: "zebra", def: { command: "z" } },
+      { name: "alpha", def: { command: "a" } },
+    ]),
+  );
+  assert.deepStrictEqual(Object.keys(out.mcp), ["alpha", "zebra"]);
+});
+
+test("toOpenCodeMcpConfig ends with a trailing newline", () => {
+  assert.ok(toOpenCodeMcpConfig([{ name: "s", def: { command: "x" } }]).endsWith("\n"));
 });

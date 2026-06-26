@@ -4,44 +4,115 @@ All notable changes to agentry are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.6.0] — MCP server sync
+## [0.8.0] — MCP server sync
 
-A new content type: Model Context Protocol server configs, authored once and synced to the harnesses that read a portable `mcpServers` map.
+A new content type: Model Context Protocol server configs, authored once and synced to every harness that reads a JSON server map — Claude Code, Cursor, and OpenCode.
 
 ### Added
 
 **Content type:**
 - `mcp/` source directory. One harness-neutral server definition per file (`mcp/<name>.json`); the filename is the server name. Stdio (`command` / `args` / `env`) and remote (`type` / `url`) transports are supported.
-- Claude Code receives all servers merged into `.mcp.json` at the repo root (project scope); Cursor receives the identical `mcpServers` map at `.cursor/mcp.json`. Servers are sorted by name for byte-stable output. Codex is deferred — it stores servers as TOML in a shared `config.toml`.
+- **Claude Code** and **Cursor** receive the servers merged verbatim into `.mcp.json` (repo root) and `.cursor/mcp.json` — the same `mcpServers` map both read.
+- **OpenCode** receives `opencode.json` (repo root) under the `mcp` key, translated to OpenCode's shape: `type: local|remote`, a single `command` array, an `environment` map, an `enabled` flag.
+- Servers are sorted by name for byte-stable output. **Codex** is deferred — it stores servers as TOML in a shared `config.toml`.
 - One MCP server (`mcp/filesystem.json`) ships as the pattern proof.
 
 **Modules:**
-- `scripts/mcp-transform.js` — `validateServer` (semantic check) and `toMcpServersJson` (merge + sort + serialize).
+- `scripts/mcp-transform.js` — `validateServer` (semantic check), `toMcpServersJson` (Claude/Cursor merge), and `toOpenCodeMcpConfig` (OpenCode merge + per-server transform).
 
 **Tooling:**
-- `npm run lint` now validates `mcp/*.json`: valid JSON plus a declared transport, with `args` / `env` shape checks. The section runs only when MCP sources exist.
-- `npm run doctor` reports the MCP server count, confirms the generated `.mcp.json` / `.cursor/mcp.json` contain every source server, and validates each source.
+- `npm run lint` validates `mcp/*.json` (valid JSON + a declared transport, with `args` / `env` shape checks); the section runs only when MCP sources exist.
+- `npm run doctor` reports the MCP server count and confirms `.mcp.json`, `.cursor/mcp.json`, and `opencode.json` each contain every source server.
 
 **Docs:**
-- "Authoring an MCP server" in `docs/authoring.md`; the MCP adapter narrative in `docs/architecture.md`; decision D20 in `docs/decisions.md`; contract, module, flow, and test entries in `docs/reference.md`.
+- "Authoring an MCP server" in `docs/authoring.md`; MCP adapter narrative in `docs/architecture.md`; decision D20 in `docs/decisions.md`; contract, module, flow, and test entries in `docs/reference.md`.
 
 ### Changed
 
-- `syncClaude` and `syncCursor` gained an MCP step; `loadMcpServers` is shared between them. `.mcp.json` is the first generated artifact written outside a harness namespace directory: it is written only when sources exist and is never deleted — agentry must not clobber a `.mcp.json` a user authored by hand.
-- Plugin manifest version bumped to `0.6.0`.
+- `syncClaude`, `syncCursor`, and `syncOpenCode` gained an MCP step; `loadMcpServers` is shared between them. `.mcp.json` and `opencode.json` are the generated artifacts written outside a harness namespace directory: each is written only when sources exist and is never deleted — agentry must not clobber a config a user authored by hand (`opencode.json` especially, since it holds far more than MCP).
+- Plugin manifest version bumped to `0.8.0`.
 
 ### Fixed
 
-- **Cross-platform sync determinism (CRLF).** The Cursor and Codex transforms tested `body.startsWith("\n")` to decide whether to insert the blank line after the frontmatter. On a source checked out with Windows line endings (`core.autocrlf=true`), the body started with `\r\n`, the test failed, and an extra blank line was emitted — so `npm run sync` on Windows produced spurious diffs in every generated `.mdc` and `SKILL.md`. The separator test now accepts a leading CRLF, and a new `.gitattributes` (`* text=auto eol=lf`) normalizes the working tree to LF so the transforms always see LF input. Sync is now byte-identical across platforms.
+- **Cross-platform sync determinism (CRLF).** The Cursor, Codex, and OpenCode transforms tested `body.startsWith("\n")` to decide whether to insert the blank line after the frontmatter. On a source checked out with Windows line endings (`core.autocrlf=true`), the body started with `\r\n`, the test failed, and an extra blank line was emitted — so `npm run sync` on Windows produced spurious diffs in every generated `.mdc`, `SKILL.md`, and OpenCode agent/command. The separator test now accepts a leading CRLF, and a new `.gitattributes` (`* text=auto eol=lf`) normalizes the working tree to LF so the transforms always see LF input. Sync is now byte-identical across platforms.
 
 ### Tests
 
-- 18 new cases in `tests/mcp-transform.test.js` (65 total): `validateServer` accept/reject paths and `toMcpServersJson` wrapping, verbatim preservation, name sorting, order-independence, no-mutation, formatting, and empty-list behavior.
+- 31 new cases (98 total): `validateServer`, `toMcpServersJson`, and `toOpenCodeMcpConfig` in `tests/mcp-transform.test.js`, plus CRLF-vs-LF invariance regression tests for the Cursor, Codex, and OpenCode transforms.
 
 ### Deferred
 
 - **Codex MCP support.** Codex stores servers as TOML under `[mcp_servers.<name>]` in its shared `config.toml`; a safe merge needs a TOML serializer and is deferred. See `docs/decisions.md` D20.
-- **MCP install.** The installers are not extended to place `.mcp.json` / `.cursor/mcp.json` — installing means merging into a user's existing MCP config without clobbering their own servers, which needs its own design. See `docs/decisions.md` D20.
+- **MCP install.** The installers are not extended to place the generated MCP files — installing means merging into a user's existing config without clobbering their own servers, which needs its own design. See `docs/decisions.md` D20.
+
+## [0.7.0] — OpenCode adapter
+
+A fourth harness. OpenCode CLI has native agents, commands, and skills, so the mapping is near-verbatim — the closest of any harness to Claude Code, and the only other one that receives agentry's slash commands.
+
+### Added
+
+**Harness adapter:**
+- OpenCode support (`--target opencode`). `syncOpenCode` generates into `.opencode/` with plural subdirectories (`agents/`, `commands/`, `skills/`), matching current OpenCode (singular forms are backwards-compat only).
+  - **Agents** → `.opencode/agents/<name>.md`: frontmatter translated to OpenCode's shape — `description` kept, `mode: subagent` added, and `name` / `tools` / `model` dropped (Claude Code's `tools` allow-list and `model: sonnet` shorthand do not match OpenCode's permission-map and `provider/model` forms).
+  - **Skills** → `.opencode/skills/<name>/`: copied verbatim, including bundled sibling files. OpenCode uses the same Agent Skills format.
+  - **Commands** → `.opencode/commands/<name>.md`: `argument-hint` dropped, `$ARGUMENTS` body preserved. OpenCode is the only harness besides Claude Code with user-extensible commands.
+  - No `agentry-` prefix — like Claude Code, OpenCode's primitives map 1:1, so content keeps its names and the command→agent references stay intact.
+
+**Modules:**
+- `scripts/opencode-transform.js` — `agentToOpenCodeAgent` and `commandToOpenCode`.
+
+**Tooling:**
+- Install scripts accept `--target opencode` / `-Target opencode`. Default scope is user (`~/.config/opencode/`); `--project` installs to `.opencode/`.
+- `doctor.js` checks the generated `.opencode/` tree against sources.
+
+### Changed
+
+- `ALL_TARGETS` and the `ADAPTERS` map gained `opencode`.
+- Plugin manifest and `package.json` version bumped to `0.7.0`.
+- README and architecture doc updated: four-harness data flow, a "The OpenCode adapter" section, and a note that commands now reach Claude Code *and* OpenCode.
+
+### Tests
+
+- 67 unit tests (up from 59). Added `tests/opencode-transform.test.js`: `agentToOpenCodeAgent` (mode set, field drops, body and colon-in-description preservation, null on no frontmatter) and `commandToOpenCode` (description kept, `argument-hint` dropped, `$ARGUMENTS` preserved).
+
+### Deferred
+
+- **OpenCode rules and hooks.** OpenCode's rules model is `AGENTS.md` plus the `instructions` config — a separate mapping from a per-file rules directory. Hooks have no OpenCode drop-in directory. Both are deferred.
+- **OpenCode agent tool permissions.** `tools` is dropped rather than translated into OpenCode's permission map; deriving it from the source allow-list is a possible future enhancement.
+
+## [0.6.0] — hooks pipeline, command coverage, and completed rule mappings
+
+Closes the gaps the previous releases flagged as deferred: hooks become a real content type, the new agents get command wrappers, and the two rule mappings parked at v0.3 (Cursor auto-apply globs, Codex rules) are now implemented.
+
+### Added
+
+**Content type — hooks:**
+- `hooks/` source directory. `syncClaude` copies hook scripts verbatim into `.claude/hooks/`; the user references a hook from `settings.json` to enable it. Hooks sync to Claude Code only — Cursor and Codex have no drop-in hooks directory. `.claude/hooks/` joined the `syncClaude` wipe list.
+- One pattern-proof hook, `hooks/protect-generated-dirs.js` — a `PreToolUse` guard that blocks Write/Edit-class calls targeting the generated `.claude/`, `.cursor/`, and `.codex/` directories and points the author back at the source file. Zero dependencies; fails open on malformed input.
+
+**Agents:**
+- `security-reviewer` — vulnerability analysis through a threat-model lens (injection, access control, secrets, crypto, dependency risk). The security-specialist counterpart to `code-reviewer`.
+- `build-fixer` — diagnoses and resolves build/compile/CI failures with the minimal fix, fixing the cause rather than masking the symptom.
+
+**Skills:**
+- `verification-loop` — prove a change works by running it before declaring it done.
+- `api-design` — design a clean, consistent, protocol-agnostic API contract before implementing it.
+
+**Commands** (Claude Code only):
+- `/security-review`, `/build-fix` — wrappers for the two new agents.
+- `/verify` — wrapper for the `verification-loop` skill.
+
+### Changed
+
+- **Cursor auto-apply globs (was deferred at v0.3).** Rules whose `language` field (or category directory) maps to a known glob set now sync with `globs` + `alwaysApply: false` — Cursor's "Auto Attached" mode. `LANGUAGE_GLOBS` and `globsForLanguage` added to `scripts/cursor-transform.js`; `toCursorRule` gained an optional `{ globs }` argument (skills are unaffected — no globs passed). The TypeScript strict-mode rule now auto-attaches to `.ts`/`.tsx`.
+- **Codex rules mapping (was deferred at v0.3).** `syncCodex` now converts each rule to a skill (`ruleToSkill`) named `agentry-<category>-<name>` — Codex has no rules primitive distinct from skills.
+- Install scripts (`install.sh`, `install.ps1`) copy `hooks/` for the Claude target. `doctor.js` reports the `hooks/` source and checks the generated copies.
+- Plugin manifest and `package.json` version bumped to `0.6.0`.
+- README "What's inside", architecture doc status table, and the Codex/Cursor adapter notes updated for hooks, the new commands, and the completed rule mappings.
+
+### Tests
+
+- 59 unit tests (up from 47). Added: `toCursorRule` globs injection and no-op-without-globs cases, `globsForLanguage` mapping; `ruleToSkill` field-drop, body preservation, and description-fallback cases.
 
 ## [0.5.0] — research and design content
 
