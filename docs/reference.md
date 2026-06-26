@@ -352,7 +352,7 @@ Covers `validateServer`, `toMcpServersJson`, `toOpenCodeMcpConfig`:
 | `sync:dry` | `node scripts/sync-harnesses.js --dry-run` | Log what sync would do without touching the filesystem. |
 | `doctor` | `node scripts/doctor.js` | Report installation health. |
 | `lint` | `node scripts/lint-frontmatter.js` | Validate frontmatter on agents and skills. |
-| `test` | `node --test tests/` | Run unit tests. |
+| `test` | `node --test` | Run unit tests (built-in discovery finds `tests/*.test.js`; no path arg, so it works across Node 20 and 24). |
 
 Node engine requirement: `>=18.0.0`. No runtime dependencies; no devDependencies.
 

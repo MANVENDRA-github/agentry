@@ -9,7 +9,7 @@
     "sync:dry": "node scripts/sync-harnesses.js --dry-run",
     "doctor": "node scripts/doctor.js",
     "lint": "node scripts/lint-frontmatter.js",
-    "test": "node --test tests/"
+    "test": "node --test"
   },
   "engines": {
     "node": ">=18.0.0"
