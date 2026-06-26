@@ -4,7 +4,7 @@ This document explains how agentry is structured internally. Read this if you wa
 
 ## Overview
 
-agentry follows a source-of-truth + adapter pattern. Content (agents, skills, commands, rules, hooks) is authored once in top-level directories. A sync script generates harness-specific copies into separate directories — one per supported AI tool. Users install agentry by copying the generated directory for their tool into the location that tool expects.
+agentry follows a source-of-truth + adapter pattern. Content (agents, skills, commands, rules, hooks, MCP servers) is authored once in top-level directories. A sync script generates harness-specific copies into separate directories — one per supported AI tool. Users install agentry by copying the generated directory for their tool into the location that tool expects.
 
 The reason for this shape: maintaining the same `code-reviewer` agent or `tdd-workflow` skill by hand across `.claude/` and `.cursor/` directories means the two copies drift the first time anyone edits one and forgets the other. A sync step makes drift impossible.
 
@@ -28,6 +28,7 @@ Each arrow is one well-defined transformation. Source files never change as a si
 | `commands/` | `<name>.md` per slash command. | Active in v0.2 (Claude Code only) |
 | `rules/` | `<category>/<rule-name>.md` per rule, namespaced by language (`typescript`, `python`, `go`) or topic (`security`, `performance`). | Active in v0.3 (Claude Code verbatim; Cursor as `.mdc` — auto-attached via `language`-derived globs since v0.6; Codex as a skill since v0.6). |
 | `hooks/` | `<name>.{sh,js}` per harness hook. | Active in v0.6 (Claude Code only) |
+| `mcp/` | `<name>.json` per MCP server. One harness-neutral server definition; the filename is the server name. | Active in v0.8 (Claude Code `.mcp.json`, Cursor `.cursor/mcp.json`, OpenCode `opencode.json`; Codex deferred) |
 
 The sync engine handles missing source directories gracefully — adding a new content type means creating the directory, adding source files, and extending the adapters to know what to do with them.
 
@@ -90,6 +91,19 @@ OpenCode CLI is the fourth supported harness (added v0.7), and the closest of al
 **Rules and hooks deferred.** OpenCode's rules model is `AGENTS.md` plus the `instructions` config array — a different shape from a per-file rules directory — so rule sync is deferred pending that mapping. Hooks are skipped too: OpenCode has no drop-in hooks directory.
 
 **Wipe pattern.** Only the `agents/`, `commands/`, and `skills/` subdirectories of `.opencode/` are wiped. The parent `.opencode/` may hold the user's `opencode.json` and other state — same "wipe what you own" discipline as `syncClaude` and `syncCodex`.
+
+## The MCP adapter (across harnesses)
+
+MCP servers (added v0.8) break the one-source-one-output shape every other content type follows. Instead of one generated file per source, all `mcp/<name>.json` sources are *merged* into a single config per harness. `loadMcpServers` (in `sync-harnesses.js`) reads and JSON-parses each source into `{ name, def }` records — throwing on a malformed file so sync fails loudly rather than emitting a broken config — and the transforms in `scripts/mcp-transform.js` build the per-harness output, sorting by name so it is byte-stable regardless of `readdir` order.
+
+There is no dedicated `syncMcp` adapter; instead each harness adapter that supports MCP writes its own output as a final step, because the target shape differs:
+
+- **`syncClaude`** writes `.mcp.json` at the repo root — Claude Code's project-scope MCP path — as `{ "mcpServers": { "<name>": def } }`. The definition is passed through verbatim (`toMcpServersJson`).
+- **`syncCursor`** writes the identical `mcpServers` map to `.cursor/mcp.json`. Cursor and Claude Code read the same shape, so no transform is needed.
+- **`syncOpenCode`** writes `opencode.json` at the repo root, under the `mcp` key, but OpenCode's schema differs — `type: "local" | "remote"`, a single `command` array (command + args), an `environment` map, an `enabled` flag — so `toOpenCodeMcpConfig` performs a real per-server transform.
+- **`syncCodex`** skips MCP. Codex stores servers as TOML in its shared `config.toml`, which needs its own merge design (deferred).
+
+Two of these outputs — `.mcp.json` and `opencode.json` — are the only generated artifacts that land outside a harness namespace directory; they are the project-scope paths the harnesses read from the repo root. Because of that, they follow a stricter discipline than the wiped namespace dirs: each is written only when at least one MCP source exists, and is **never deleted**. agentry must not clobber a `.mcp.json` (or an `opencode.json`, which holds far more than MCP) that a user authored before adopting agentry's MCP sync. This is the one place "wipe what you own" becomes "write what you own, but never delete what you might not have created." See [`decisions.md`](decisions.md) D20.
 
 ## Adding a new harness adapter
 

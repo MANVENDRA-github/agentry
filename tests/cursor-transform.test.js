@@ -133,3 +133,12 @@ test("globsForLanguage returns null for unknown or missing language", () => {
   assert.strictEqual(globsForLanguage(undefined), null);
   assert.strictEqual(globsForLanguage(""), null);
 });
+
+test("toCursorRule output is invariant to CRLF vs LF line endings (no spurious blank line)", () => {
+  // A CRLF source must produce the same logical output as its LF twin. Before
+  // the CRLF-aware separator fix, the CRLF body (starting with \r\n) failed the
+  // leading-newline test and gained an extra blank line after the closing ---.
+  const lf = "---\nname: foo\ndescription: example\n---\n\n# Heading\n\nBody.\n";
+  const crlf = lf.replace(/\n/g, "\r\n");
+  assert.strictEqual(toCursorRule(crlf).replace(/\r\n/g, "\n"), toCursorRule(lf));
+});

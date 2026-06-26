@@ -4,6 +4,47 @@ All notable changes to agentry are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] — MCP server sync
+
+A new content type: Model Context Protocol server configs, authored once and synced to every harness that reads a JSON server map — Claude Code, Cursor, and OpenCode.
+
+### Added
+
+**Content type:**
+- `mcp/` source directory. One harness-neutral server definition per file (`mcp/<name>.json`); the filename is the server name. Stdio (`command` / `args` / `env`) and remote (`type` / `url`) transports are supported.
+- **Claude Code** and **Cursor** receive the servers merged verbatim into `.mcp.json` (repo root) and `.cursor/mcp.json` — the same `mcpServers` map both read.
+- **OpenCode** receives `opencode.json` (repo root) under the `mcp` key, translated to OpenCode's shape: `type: local|remote`, a single `command` array, an `environment` map, an `enabled` flag.
+- Servers are sorted by name for byte-stable output. **Codex** is deferred — it stores servers as TOML in a shared `config.toml`.
+- One MCP server (`mcp/filesystem.json`) ships as the pattern proof.
+
+**Modules:**
+- `scripts/mcp-transform.js` — `validateServer` (semantic check), `toMcpServersJson` (Claude/Cursor merge), and `toOpenCodeMcpConfig` (OpenCode merge + per-server transform).
+
+**Tooling:**
+- `npm run lint` validates `mcp/*.json` (valid JSON + a declared transport, with `args` / `env` shape checks); the section runs only when MCP sources exist.
+- `npm run doctor` reports the MCP server count and confirms `.mcp.json`, `.cursor/mcp.json`, and `opencode.json` each contain every source server.
+
+**Docs:**
+- "Authoring an MCP server" in `docs/authoring.md`; MCP adapter narrative in `docs/architecture.md`; decision D20 in `docs/decisions.md`; contract, module, flow, and test entries in `docs/reference.md`.
+
+### Changed
+
+- `syncClaude`, `syncCursor`, and `syncOpenCode` gained an MCP step; `loadMcpServers` is shared between them. `.mcp.json` and `opencode.json` are the generated artifacts written outside a harness namespace directory: each is written only when sources exist and is never deleted — agentry must not clobber a config a user authored by hand (`opencode.json` especially, since it holds far more than MCP).
+- Plugin manifest version bumped to `0.8.0`.
+
+### Fixed
+
+- **Cross-platform sync determinism (CRLF).** The Cursor, Codex, and OpenCode transforms tested `body.startsWith("\n")` to decide whether to insert the blank line after the frontmatter. On a source checked out with Windows line endings (`core.autocrlf=true`), the body started with `\r\n`, the test failed, and an extra blank line was emitted — so `npm run sync` on Windows produced spurious diffs in every generated `.mdc`, `SKILL.md`, and OpenCode agent/command. The separator test now accepts a leading CRLF, and a new `.gitattributes` (`* text=auto eol=lf`) normalizes the working tree to LF so the transforms always see LF input. Sync is now byte-identical across platforms.
+
+### Tests
+
+- 31 new cases (98 total): `validateServer`, `toMcpServersJson`, and `toOpenCodeMcpConfig` in `tests/mcp-transform.test.js`, plus CRLF-vs-LF invariance regression tests for the Cursor, Codex, and OpenCode transforms.
+
+### Deferred
+
+- **Codex MCP support.** Codex stores servers as TOML under `[mcp_servers.<name>]` in its shared `config.toml`; a safe merge needs a TOML serializer and is deferred. See `docs/decisions.md` D20.
+- **MCP install.** The installers are not extended to place the generated MCP files — installing means merging into a user's existing config without clobbering their own servers, which needs its own design. See `docs/decisions.md` D20.
+
 ## [0.7.0] — OpenCode adapter
 
 A fourth harness. OpenCode CLI has native agents, commands, and skills, so the mapping is near-verbatim — the closest of any harness to Claude Code, and the only other one that receives agentry's slash commands.

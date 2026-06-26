@@ -29,6 +29,11 @@
 // Skills need no transform: OpenCode uses the same Agent Skills format
 // (`name` + `description` frontmatter, body, bundled sibling files), so the
 // sync engine copies them verbatim.
+//
+// Both transforms reattach the body after the frontmatter with exactly one
+// blank line. The `/^\r?\n/` leading-newline test accepts CRLF as well as LF,
+// so a source checked out with Windows line endings does not gain a spurious
+// extra blank line — keeping sync output identical across platforms.
 
 import { parseFrontmatter } from "./frontmatter.js";
 
@@ -48,7 +53,7 @@ export function agentToOpenCodeAgent(content) {
   const { fields, body } = parsed;
   const description = fields.description ?? "";
   const newRaw = `description: ${description}\nmode: subagent`;
-  return `---\n${newRaw}\n---\n${body.startsWith("\n") ? "" : "\n"}${body}`;
+  return `---\n${newRaw}\n---\n${/^\r?\n/.test(body) ? "" : "\n"}${body}`;
 }
 
 /**
@@ -67,5 +72,5 @@ export function commandToOpenCode(content) {
   const { fields, body } = parsed;
   const description = fields.description ?? "";
   const newRaw = `description: ${description}`;
-  return `---\n${newRaw}\n---\n${body.startsWith("\n") ? "" : "\n"}${body}`;
+  return `---\n${newRaw}\n---\n${/^\r?\n/.test(body) ? "" : "\n"}${body}`;
 }

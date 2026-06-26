@@ -68,3 +68,23 @@ test("commandToOpenCode preserves the $ARGUMENTS placeholder in the body", () =>
 test("commandToOpenCode returns null when source has no frontmatter", () => {
   assert.strictEqual(commandToOpenCode("No frontmatter.\n"), null);
 });
+
+// --- CRLF invariance (cross-platform sync determinism) --------------------
+
+test("agentToOpenCodeAgent output is invariant to CRLF vs LF line endings (no spurious blank line)", () => {
+  const lf = "---\nname: r\ndescription: Reviews.\ntools: [Read]\nmodel: sonnet\n---\n\n# H\n\nBody.\n";
+  const crlf = lf.replace(/\n/g, "\r\n");
+  assert.strictEqual(
+    agentToOpenCodeAgent(crlf).replace(/\r\n/g, "\n"),
+    agentToOpenCodeAgent(lf),
+  );
+});
+
+test("commandToOpenCode output is invariant to CRLF vs LF line endings (no spurious blank line)", () => {
+  const lf = "---\ndescription: Run it.\nargument-hint: [x]\n---\n\nDo $ARGUMENTS now.\n";
+  const crlf = lf.replace(/\n/g, "\r\n");
+  assert.strictEqual(
+    commandToOpenCode(crlf).replace(/\r\n/g, "\n"),
+    commandToOpenCode(lf),
+  );
+});
