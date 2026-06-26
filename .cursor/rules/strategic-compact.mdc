@@ -1,0 +1,48 @@
+---
+name: strategic-compact
+description: Discipline of compacting the working context deliberately at task boundaries instead of letting it auto-truncate at an arbitrary point mid-thought. Invoke on a long task when a phase finishes and the next one needs a clean slate, or when context is filling and important early decisions risk being evicted. Skip for short tasks that fit comfortably in context.
+alwaysApply: false
+---
+
+# Strategic compact
+
+The habit of choosing *when* to shed context, rather than letting the tool choose for you. Automatic compaction fires at a size threshold — which lands wherever you happen to be, often mid-investigation, and summarizes by recency rather than by importance. A decision made early and still load-bearing gets dropped to keep a stack trace you no longer need. Compacting deliberately at a natural seam keeps what matters and discards what is spent.
+
+## When to invoke
+
+- A phase of a long task just finished — research done and a plan chosen, a feature landed before the next, a bug root-caused before the fix — and the next phase does not need the raw detail of the last.
+- Context is filling and you can feel early, still-relevant decisions at risk of being the next thing evicted.
+- Before a long, output-heavy step (a big build, a broad search, a large file read) that will flood context with material you only need once.
+
+## When NOT to invoke
+
+- Short tasks that fit comfortably — compacting adds a summarization step and a small loss for no gain.
+- Mid-thought, when the detail you would shed is exactly what you are reasoning over right now. Compact at the seam *after* a phase, not in the middle of one.
+
+## The discipline
+
+1. **Recognize the seam.** Work has natural boundaries: a question answered, an approach decided, a unit shipped. The seam is the moment the prior phase's raw detail stops being load-bearing and its *conclusion* is all you carry forward.
+2. **Name what must survive.** Before shedding anything, state the durable facts the rest of the task depends on: the decision and its reason, the constraints discovered, the file paths and signatures in play, what is done and what remains. If it is not written down, assume compaction will lose it.
+3. **Shed the spent detail.** Let go of the things that did their job — the exploratory dead ends, the full file dumps you have extracted what you need from, the resolved error output, the superseded plan.
+4. **Carry the conclusion, not the transcript.** Forward a tight summary that lets the next phase proceed without re-deriving the last. "Chose X over Y because Z; the relevant code is A:line; B and C remain" beats replaying how you got there.
+
+## What survives a compaction
+
+- **Decisions and their rationale** — so they are not relitigated, and so a later step knows why the path was chosen.
+- **Constraints and invariants discovered** — the gotcha, the contract, the thing that must stay true.
+- **The concrete anchors** — file paths, function and symbol names, the exact commands that work.
+- **State of the work** — what is done, verified, and what is still open.
+
+## What is safe to drop
+
+- Raw file contents you have already extracted the relevant part from.
+- Resolved errors and the investigation that closed them.
+- Superseded plans and abandoned approaches (keep one line on *why* abandoned, if it prevents repeating them).
+- Verbose tool output whose conclusion you have already recorded.
+
+## Anti-patterns
+
+- **Waiting for auto-compaction.** It fires at a size, not a seam, and keeps recent over important — surrendering the one choice that protects your context.
+- **Compacting mid-phase.** Shedding the detail you are actively reasoning over costs more than it saves.
+- **Summarizing the transcript instead of the conclusions.** A shorter replay of how you got here is not the same as the few facts the next phase needs.
+- **Trusting memory over the record.** What you do not explicitly carry forward, treat as gone. Write the durable facts down before you compact, not after.

@@ -4,6 +4,28 @@ All notable changes to agentry are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] — loop-coverage content
+
+Curated content closing the universal gaps in the dev loop — end-to-end testing, performance work, context management, and learning capture. Content-only release; no infrastructure changes. All components are language- and framework-neutral (D9), and each earns its place against the curation bar (D10): the additions are the loop stages neither agentry nor the maximalist alternatives covered, not a catalog import.
+
+### Added
+
+**Agents:**
+- `e2e-runner` — generates, maintains, and runs end-to-end and integration tests for real user journeys. Framework-agnostic (uses whatever harness the repo has), flakiness-averse (waits on conditions, quarantines rather than deletes, captures artifacts). Complements `tdd-workflow`/`test-writing`, which stay at the unit level.
+
+**Skills:**
+- `perf-profiling` — fix a performance problem by measurement: baseline → profile to locate the bottleneck → one minimal change → re-measure on the same harness → confirm behavior unchanged. The discipline against optimizing by guess.
+- `strategic-compact` — compact the working context deliberately at task boundaries instead of letting it auto-truncate at an arbitrary point, preserving the decisions that matter over the recency the threshold keeps.
+- `continuous-learning` — turn a hard-won session insight into a durable, reusable note before the context scrolls away. Pairs naturally with a session-end (Stop) hook, but stands on its own as a discipline.
+
+**Commands** (Claude Code & OpenCode):
+- `/e2e` — slash-command wrapper for the `e2e-runner` agent.
+
+### Changed
+
+- README "What's inside" expanded with the new agent, three skills, and command; the command count is now twelve.
+- Plugin manifest version bumped to `0.9.0`.
+
 ## [0.8.0] — MCP server sync
 
 A new content type: Model Context Protocol server configs, authored once and synced to every harness that reads a JSON server map — Claude Code, Cursor, and OpenCode.
