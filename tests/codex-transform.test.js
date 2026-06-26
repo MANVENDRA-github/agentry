@@ -142,3 +142,32 @@ test("ruleToSkill uses a generic description when there is neither frontmatter n
 test("ruleToSkill never returns null (rules may be plain markdown)", () => {
   assert.notStrictEqual(ruleToSkill("anything\n", "agentry-x"), null);
 });
+
+// --- CRLF invariance (cross-platform sync determinism) --------------------
+
+test("renameSkill output is invariant to CRLF vs LF line endings (no spurious blank line)", () => {
+  const lf = "---\nname: tdd\ndescription: Test-first.\n---\n\n# H\n\nBody.\n";
+  const crlf = lf.replace(/\n/g, "\r\n");
+  assert.strictEqual(
+    renameSkill(crlf, "agentry-tdd").replace(/\r\n/g, "\n"),
+    renameSkill(lf, "agentry-tdd"),
+  );
+});
+
+test("agentToSkill output is invariant to CRLF vs LF line endings (no spurious blank line)", () => {
+  const lf = "---\nname: planner\ndescription: Plans.\ntools: [Read]\nmodel: sonnet\n---\n\n# H\n\nBody.\n";
+  const crlf = lf.replace(/\n/g, "\r\n");
+  assert.strictEqual(
+    agentToSkill(crlf, "agentry-planner").replace(/\r\n/g, "\n"),
+    agentToSkill(lf, "agentry-planner"),
+  );
+});
+
+test("ruleToSkill output is invariant to CRLF vs LF line endings (no spurious blank line)", () => {
+  const lf = "---\nname: r\ndescription: A rule.\nlanguage: go\n---\n\n# H\n\nBody.\n";
+  const crlf = lf.replace(/\n/g, "\r\n");
+  assert.strictEqual(
+    ruleToSkill(crlf, "agentry-go-r").replace(/\r\n/g, "\n"),
+    ruleToSkill(lf, "agentry-go-r"),
+  );
+});

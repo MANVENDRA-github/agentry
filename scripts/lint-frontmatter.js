@@ -1,12 +1,18 @@
 #!/usr/bin/env node
-// agentry — validate frontmatter on every agent and skill.
+// agentry — validate source content: frontmatter on every agent and skill,
+// and the JSON shape of every MCP server.
 //
-// Checks:
+// Checks (agents and skills):
 //   - Frontmatter block is present and parseable.
 //   - Required fields are present (agents: name, description, tools, model;
 //     skills: name, description).
 //   - `name` matches the filename (or skill directory name).
 //   - `description` is non-empty and at least 20 characters.
+//
+// Checks (MCP servers):
+//   - File is valid JSON.
+//   - Server declares a transport: a non-empty `command` (stdio) or `url`
+//     (remote); `args`/`env`, if present, have the right shape.
 //
 // Usage:
 //   node scripts/lint-frontmatter.js
@@ -21,6 +27,7 @@ import {
   checkRequired,
   checkDescription,
 } from "./frontmatter.js";
+import { validateServer } from "./mcp-transform.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, "..");
@@ -100,6 +107,31 @@ async function lintSkill(skillDir) {
   }
 }
 
+async function lintMcpServer(file) {
+  const fullPath = path.join(REPO_ROOT, "mcp", file);
+  const raw = await fs.readFile(fullPath, "utf8").catch(() => null);
+  if (raw === null) {
+    failures.push({ file: rel(fullPath), errors: ["file not readable"] });
+    console.log(`  ✗ ${rel(fullPath)} — not readable`);
+    return;
+  }
+  let def;
+  try {
+    def = JSON.parse(raw);
+  } catch (err) {
+    failures.push({ file: rel(fullPath), errors: [`invalid JSON: ${err.message}`] });
+    console.log(`  ✗ ${rel(fullPath)} — invalid JSON: ${err.message}`);
+    return;
+  }
+  const errors = validateServer(def);
+  if (errors.length) {
+    failures.push({ file: rel(fullPath), errors });
+    console.log(`  ✗ ${rel(fullPath)} — ${errors.join("; ")}`);
+  } else {
+    console.log(`  ✓ ${rel(fullPath)} — valid`);
+  }
+}
+
 console.log("agentry lint — frontmatter validation\n");
 
 console.log("Agents:");
@@ -115,6 +147,18 @@ const skillEntries = await readDirSafe(path.join(REPO_ROOT, "skills"));
 for (const entry of skillEntries) {
   if (entry.isDirectory()) {
     await lintSkill(entry.name);
+  }
+}
+
+// MCP servers are optional — only print the section when sources exist so a
+// repo without MCP servers does not show an empty heading.
+const mcpEntries = (await readDirSafe(path.join(REPO_ROOT, "mcp"))).filter(
+  (entry) => entry.isFile() && entry.name.endsWith(".json"),
+);
+if (mcpEntries.length) {
+  console.log("\nMCP servers:");
+  for (const entry of mcpEntries) {
+    await lintMcpServer(entry.name);
   }
 }
 

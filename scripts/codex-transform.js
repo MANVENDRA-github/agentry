@@ -13,6 +13,11 @@
 // dropped (Codex skills do not understand them), and the body becomes the
 // skill's instructions. This is an approximation — same pattern as the Cursor
 // skill→rule transform. See docs/decisions.md for the rationale.
+//
+// Both transforms reattach the body after the frontmatter with exactly one
+// blank line. The `/^\r?\n/` leading-newline test accepts CRLF as well as LF,
+// so a source checked out with Windows line endings does not gain a spurious
+// extra blank line — keeping sync output identical across platforms.
 
 import { parseFrontmatter } from "./frontmatter.js";
 
@@ -29,7 +34,7 @@ export function renameSkill(content, newName) {
   if (!parsed) return null;
   const { raw, body } = parsed;
   const newRaw = raw.replace(/^name\s*:.*$/m, `name: ${newName}`);
-  return `---\n${newRaw}\n---\n${body.startsWith("\n") ? "" : "\n"}${body}`;
+  return `---\n${newRaw}\n---\n${/^\r?\n/.test(body) ? "" : "\n"}${body}`;
 }
 
 /**
@@ -49,7 +54,7 @@ export function agentToSkill(content, newName) {
   const { fields, body } = parsed;
   const description = fields.description ?? "";
   const newRaw = `name: ${newName}\ndescription: ${description}`;
-  return `---\n${newRaw}\n---\n${body.startsWith("\n") ? "" : "\n"}${body}`;
+  return `---\n${newRaw}\n---\n${/^\r?\n/.test(body) ? "" : "\n"}${body}`;
 }
 
 /**
@@ -75,5 +80,5 @@ export function ruleToSkill(content, newName) {
   const description =
     parsed?.fields.description || (heading ? heading[1].trim() : "") || `${newName} rule`;
   const newRaw = `name: ${newName}\ndescription: ${description}`;
-  return `---\n${newRaw}\n---\n${body.startsWith("\n") ? "" : "\n"}${body}`;
+  return `---\n${newRaw}\n---\n${/^\r?\n/.test(body) ? "" : "\n"}${body}`;
 }

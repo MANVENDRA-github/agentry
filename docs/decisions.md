@@ -197,3 +197,27 @@ Companion reading: [`architecture.md`](architecture.md) for how the system is st
 **Mitigation.** Universal content is harder to be wrong about than stack-specific content. The v0.2 components are all generic enough to be useful in a wide range of workflows even if the maintainer hadn't personally needed them yet.
 
 **Revisit if.** Real usage shows specific v0.2 components are never invoked. At that point retire them rather than letting them inflate the library.
+
+## MCP
+
+### D20: MCP servers as a content type — one neutral source, per-harness shape, root config files treated as owned
+
+**Decision.** MCP server configs are a first-class source type at `mcp/<name>.json`. Each file is the server *definition* as it appears inside Claude/Cursor's `mcpServers` map; the filename is the server name. Sync emits the harness-native config for the three harnesses that take a JSON map: Claude Code (`.mcp.json`, repo root), Cursor (`.cursor/mcp.json`), and OpenCode (`opencode.json`, repo root, under the `mcp` key). Codex is skipped.
+
+**Why a content type at all.** An MCP server is declared in a different file for every harness (`.mcp.json`, `.cursor/mcp.json`, `opencode.json`) but describes the same process or endpoint. That is precisely the maintained-twice-and-drifts problem agentry exists to kill — and unlike agents or skills, the content is structured config, not prose, so the translation is loss-free.
+
+**Why the filename is the name.** MCP definitions carry no name field of their own — the name is the map key. Deriving it from the filename matches how agents and skills take their identity (D3) and keeps the source as the bare definition.
+
+**Why a merged output, not one file per source.** This is the first content type whose generated form is a single file aggregating many sources, because that is the shape the harnesses read. The merge is sorted by name so the output is byte-stable regardless of `readdir` order — the same idempotence (D1, CI clean-tree) every other type gets for free.
+
+**Why Claude and Cursor pass through but OpenCode transforms.** Claude Code and Cursor both read a `mcpServers` map whose entries are exactly the neutral definition, so the adapter wraps and writes verbatim. OpenCode's schema differs — `type: "local" | "remote"`, a single `command` array (command + args), an `environment` map (not `env`), an `enabled` flag — so OpenCode needs a real transform (`toOpenCodeMcpConfig`), the same way Cursor needs one for skills (D4).
+
+**Why the root config files are treated as owned, not merged into.** `.mcp.json` and `opencode.json` are the only generated artifacts that land outside a harness namespace directory (`.claude/`, `.cursor/`, `.codex/`, `.opencode/`) — they are the project-scope paths the harnesses read from the repo root. agentry treats them as fully generated: you add servers as `mcp/*.json` sources, never by editing the outputs. But unlike the namespace directories, agentry does **not** wipe them — each is written only when sources exist and is never deleted, so a config a user wrote by hand (notably `opencode.json`, which holds far more than MCP) is not clobbered by an empty `mcp/`. "Wipe what you own" (D5) becomes "write what you own, but don't delete what you might not have created."
+
+**Why Codex is deferred.** Claude, Cursor, and OpenCode all take a JSON map. Codex stores servers as TOML under `[mcp_servers.<name>]` inside its shared `config.toml` — the same file holding model, approval, and sandbox settings. Emitting that safely needs a TOML serializer and a merge that preserves the user's other keys, its own design problem. Deferred, in the same spirit as Codex rules historically were.
+
+**Alternative considered — make each source a complete `.mcp.json` fragment.** Rejected: it repeats the `mcpServers` wrapper in every file and reintroduces a name that must track the filename. The bare-definition form is smaller and has a single source of the name.
+
+**Install is deferred.** Sync produces the native files; the installers (D12) are not extended to place them. Installing MCP means *merging* into a user's existing config (`~/.claude.json`, a project `.mcp.json`, `.cursor/mcp.json`, `opencode.json`) without destroying servers they added themselves — a stateful merge, not the directory-copy the installers do today. Shipping a copy that silently overwrote a user's config would be the hostile default D5 warns against. Deferred until the merge is designed.
+
+**Revisit if.** Codex MCP support lands (needs the TOML path), or install grows a safe-merge step that can place MCP files without clobbering user servers.

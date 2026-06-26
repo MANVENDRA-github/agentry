@@ -225,6 +225,65 @@ git add rules/<category>/<rule-name>.md .claude/rules/<category>/<rule-name>.md 
 git commit -m "feat: add <category>/<rule-name> rule"
 ```
 
+## Authoring an MCP server
+
+An MCP server config tells a harness how to launch (or connect to) a [Model Context Protocol](https://modelcontextprotocol.io) server — a separate process or remote endpoint that exposes tools and resources to the assistant. Unlike agents, skills, and rules, an MCP server is not prose: it is a small JSON object, and it describes the same server across harnesses. That sameness is why it belongs in agentry — otherwise the identical server is re-declared by hand in `.mcp.json` (Claude Code), `.cursor/mcp.json` (Cursor), and `opencode.json` (OpenCode), and the copies drift.
+
+### 1. Create the file
+
+```
+mcp/<name>.json
+```
+
+One server per file. The filename without `.json` becomes the server's name (`mcp/github.json` → `github`). MCP definitions have no name field of their own — the name is the map key the harness uses — so agentry takes it from the filename, the same way agents and skills take their identity from theirs. Use kebab-case.
+
+### 2. Schema
+
+Each file is the server *definition* object as it appears inside Claude Code / Cursor's `mcpServers` map. Two shapes, by transport.
+
+**Local (stdio) server** — the harness spawns a process:
+
+```json
+{
+  "command": "npx",
+  "args": ["-y", "@modelcontextprotocol/server-filesystem", "."],
+  "env": { "ROOT": "." }
+}
+```
+
+**Remote (HTTP/SSE) server** — the harness connects to a URL, nothing is spawned:
+
+```json
+{
+  "type": "http",
+  "url": "https://example.com/mcp"
+}
+```
+
+Required: exactly one transport — a non-empty `command` (stdio) or a non-empty `url` (remote). Optional: `args` (array), `env` (object) for stdio; `type` and auth `headers` for remote.
+
+**Do not put real secrets in the file.** It is committed and synced like every other generated artifact. Reference an environment variable the harness expands at launch (`"env": { "API_KEY": "${GITHUB_TOKEN}" }`) rather than pasting a token.
+
+### 3. Per-harness behavior
+
+- **Claude Code & Cursor:** the definition is written verbatim into a merged `mcpServers` map — `.mcp.json` at the repo root for Claude Code, `.cursor/mcp.json` for Cursor. Servers are sorted by name so the files are byte-stable.
+- **OpenCode:** the definition is translated into OpenCode's shape and written to `opencode.json` under the `mcp` key — `type: "local"` with a single `command` array (command + args) and an `environment` map for stdio, `type: "remote"` with `url` and `headers` for remote, plus `enabled: true`.
+- **Codex:** skipped. Codex stores servers as TOML under `[mcp_servers.<name>]` in its shared `config.toml`; merging there safely needs dedicated design. Deferred — see [`decisions.md`](decisions.md) D20.
+
+### 4. Sync, verify, lint, commit
+
+```bash
+npm run sync
+cat .mcp.json                 # Claude Code: your server under mcpServers
+cat .cursor/mcp.json          # Cursor: the same map
+cat opencode.json             # OpenCode: translated under the mcp key
+npm run lint                  # validates JSON + transport shape
+git add mcp/<name>.json .mcp.json .cursor/mcp.json opencode.json
+git commit -m "feat: add <name> MCP server"
+```
+
+Note `.mcp.json` and `opencode.json` live at the repo root, not under a harness directory. agentry treats them as fully generated artifacts: add or change servers by editing `mcp/*.json` sources, never by editing the outputs. Sync writes them only when at least one `mcp/*.json` source exists, and never deletes them — so if you remove the last MCP source, delete a stale output by hand.
+
 ## Anti-patterns to avoid
 
 - **Vague descriptions** like "for code review" or "helps with testing." The harness invocation system needs a sharper trigger than this.

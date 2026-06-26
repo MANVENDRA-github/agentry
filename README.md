@@ -2,18 +2,18 @@
 
 > Author your AI coding agents and skills once. Sync them to every harness you use.
 
-agentry is a configuration framework that lets you write AI coding agents, skills, commands, and rules one time, in a single harness-neutral format, then generate the tool-specific config for Claude Code, Cursor, Codex, and OpenCode from that one source.
+agentry is a configuration framework that lets you write AI coding agents, skills, commands, rules, and MCP server configs one time, in a single harness-neutral format, then generate the tool-specific config for Claude Code, Cursor, Codex, and OpenCode from that one source.
 
-If you use more than one AI coding tool, you end up maintaining the same `code-reviewer` agent and `tdd-workflow` skill by hand in both `.claude/` and `.cursor/`. The two copies drift the first time you edit one and forget the other. agentry keeps the canonical version in top-level `agents/`, `skills/`, `commands/`, and `rules/` directories and regenerates each harness's directory from it. The generated directories are disposable — every sync wipes and rewrites them — so drift isn't a thing you remember to avoid. It can't happen.
+If you use more than one AI coding tool, you end up maintaining the same `code-reviewer` agent and `tdd-workflow` skill by hand in both `.claude/` and `.cursor/`. The two copies drift the first time you edit one and forget the other. agentry keeps the canonical version in top-level `agents/`, `skills/`, `commands/`, `rules/`, `hooks/`, and `mcp/` directories and regenerates each harness's directory from it. The generated directories are disposable — every sync wipes and rewrites them — so drift isn't a thing you remember to avoid. It can't happen.
 
 ## How it works
 
-The core is a source-of-truth + adapter pipeline in `scripts/sync-harnesses.js`. You author content once as markdown with frontmatter. Each adapter owns one target harness and translates the source into the directory layout and frontmatter that harness expects:
+The core is a source-of-truth + adapter pipeline in `scripts/sync-harnesses.js`. You author content once — markdown with frontmatter for agents, skills, commands, rules, and hooks; JSON for MCP servers. Each adapter owns one target harness and translates the source into the directory layout and config that harness expects:
 
-- **Claude Code** — near-verbatim. Agents, skills, commands, and rules map straight onto `.claude/`'s structure; the adapter also copies hooks and writes the `.claude-plugin/plugin.json` manifest.
-- **Cursor** — structural translation. Cursor has no "skill" primitive, so each skill is rewritten into a `.mdc` rule with `alwaysApply: false` (`toCursorRule` in `scripts/cursor-transform.js`). Language rules auto-attach via `language`-derived globs.
-- **Codex** — structural translation. Codex has no markdown-agent primitive, so each agent (and each rule) is converted into a Codex skill with its `tools` and `model` fields dropped (`agentToSkill` / `ruleToSkill` in `scripts/codex-transform.js`). Every generated skill is namespaced `agentry-<name>` so it can't collide with a skill the user wrote themselves.
-- **OpenCode** — near-verbatim, like Claude Code. OpenCode has native agents, commands, *and* skills, so each maps onto `.opencode/`'s plural subdirectories (`agents/`, `commands/`, `skills/`). Agent frontmatter is translated to OpenCode's shape (`mode: subagent`; the incompatible `tools` array and `model` shorthand dropped) by `agentToOpenCodeAgent` in `scripts/opencode-transform.js`; skills copy verbatim. It's the only harness besides Claude Code that receives the slash commands.
+- **Claude Code** — near-verbatim. Agents, skills, commands, and rules map straight onto `.claude/`'s structure; the adapter also copies hooks, merges MCP servers into a project `.mcp.json`, and writes the `.claude-plugin/plugin.json` manifest.
+- **Cursor** — structural translation. Cursor has no "skill" primitive, so each skill is rewritten into a `.mdc` rule with `alwaysApply: false` (`toCursorRule` in `scripts/cursor-transform.js`). Language rules auto-attach via `language`-derived globs. MCP servers merge into `.cursor/mcp.json`.
+- **Codex** — structural translation. Codex has no markdown-agent primitive, so each agent (and each rule) is converted into a Codex skill with its `tools` and `model` fields dropped (`agentToSkill` / `ruleToSkill` in `scripts/codex-transform.js`). Every generated skill is namespaced `agentry-<name>` so it can't collide with a skill the user wrote themselves. (MCP is deferred — Codex stores servers as TOML in a shared config.)
+- **OpenCode** — near-verbatim, like Claude Code. OpenCode has native agents, commands, *and* skills, so each maps onto `.opencode/`'s plural subdirectories (`agents/`, `commands/`, `skills/`). Agent frontmatter is translated to OpenCode's shape (`mode: subagent`; the incompatible `tools` array and `model` shorthand dropped) by `agentToOpenCodeAgent` in `scripts/opencode-transform.js`; skills copy verbatim. MCP servers are translated into `opencode.json` (`toOpenCodeMcpConfig`). It's the only harness besides Claude Code that receives the slash commands.
 
 Two decisions do the load-bearing work.
 
@@ -22,7 +22,7 @@ Two decisions do the load-bearing work.
 **Wipe only what you own.** An adapter deletes only the subdirectories it generates — `.claude/agents/`, `.claude/skills/`, and so on — never the parent `.claude/`. The harness keeps per-user state at that top level (`settings.local.json` for Claude Code, `config.toml` for Codex, `opencode.json` for OpenCode), and clobbering it would be destructive. Each adapter cleans its own output and leaves the user's data alone.
 
 ```
-agents/  skills/  commands/  rules/  hooks/       ← source of truth (edit these)
+agents/ skills/ commands/ rules/ hooks/ mcp/      ← source of truth (edit these)
                   │
                   ▼
        scripts/sync-harnesses.js                  ← one adapter per harness
@@ -33,6 +33,7 @@ agents/  skills/  commands/  rules/  hooks/       ← source of truth (edit thes
   (+ plugin   (skills →   (agents+   (near-
    manifest,   .mdc rules, rules →    verbatim;
    + hooks)    globs)      skills)    + commands)
+       └─ MCP servers → .mcp.json · .cursor/mcp.json · opencode.json (Codex deferred)
                   │
                   ▼
    scripts/install.sh  /  scripts/install.ps1     ← copy into the harness's real location
@@ -71,6 +72,8 @@ Eleven slash commands wrap the most-used agents and skills: `/plan`, `/review`, 
 One rule ships as a pattern proof for language-specific content: `rules/typescript/strict-mode.md`. Claude Code receives it verbatim; Cursor receives it as a `.mdc` rule auto-attached to `.ts`/`.tsx` files (via globs derived from its `language` field); Codex receives it as a skill. (OpenCode's rules model — `AGENTS.md` and the `instructions` config — is a separate mapping, deferred.)
 
 One hook ships as a pattern proof for the hooks pipeline: `hooks/protect-generated-dirs.js` — a Claude Code `PreToolUse` hook that blocks edits to the generated `.claude/`, `.cursor/`, `.codex/`, and `.opencode/` directories and points you back at the source file. Hooks sync to Claude Code only; reference it from `settings.json` to enable it.
+
+One MCP server ships as a pattern proof: `mcp/filesystem.json`. Author a Model Context Protocol server once as a harness-neutral JSON definition (the filename is the server name) and sync merges it into `.mcp.json` for Claude Code, `.cursor/mcp.json` for Cursor, and `opencode.json` for OpenCode — the first two read the same `mcpServers` map, while OpenCode's differently-shaped config is translated for it. Codex is deferred; it stores servers as TOML in a shared config file.
 
 ## Setup
 

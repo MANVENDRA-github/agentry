@@ -16,6 +16,7 @@ import { parseFrontmatter } from "./frontmatter.js";
 import { toCursorRule, globsForLanguage } from "./cursor-transform.js";
 import { renameSkill, agentToSkill, ruleToSkill } from "./codex-transform.js";
 import { agentToOpenCodeAgent, commandToOpenCode } from "./opencode-transform.js";
+import { toMcpServersJson, toOpenCodeMcpConfig } from "./mcp-transform.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, "..");
@@ -26,6 +27,7 @@ const SOURCES = {
   commands: path.join(REPO_ROOT, "commands"),
   rules: path.join(REPO_ROOT, "rules"),
   hooks: path.join(REPO_ROOT, "hooks"),
+  mcp: path.join(REPO_ROOT, "mcp"),
 };
 
 // --- CLI parsing -----------------------------------------------------------
@@ -138,6 +140,36 @@ async function copyTree(srcDir, destDir) {
 // --- Adapters --------------------------------------------------------------
 
 /**
+ * Read and JSON-parse every mcp/<name>.json source into { name, def } records.
+ * The server name is the filename without `.json`. Shared by the Claude,
+ * Cursor, and OpenCode adapters, which each emit MCP config in their own shape.
+ *
+ * Throws on a malformed JSON file: the merged config cannot be built around a
+ * broken source, and failing the sync is better than writing invalid output.
+ * Semantic validation (transport present, etc.) lives in lint and doctor —
+ * sync only needs the JSON to parse.
+ *
+ * @returns {Promise<Array<{ name: string, def: object }>>} in readdir order;
+ *   the transforms sort by name for deterministic output.
+ */
+async function loadMcpServers() {
+  const servers = [];
+  for (const entry of await readDirSafe(SOURCES.mcp)) {
+    if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
+    const name = entry.name.replace(/\.json$/, "");
+    const raw = await fs.readFile(path.join(SOURCES.mcp, entry.name), "utf8");
+    let def;
+    try {
+      def = JSON.parse(raw);
+    } catch (err) {
+      throw new Error(`mcp/${entry.name}: invalid JSON — ${err.message}`);
+    }
+    servers.push({ name, def });
+  }
+  return servers;
+}
+
+/**
  * Sync agents, skills, commands, rules, and hooks into .claude/, plus write the
  * plugin manifest. Only the generated subdirectories of .claude/ are wiped —
  * the top-level .claude/ directory may also hold Claude Code's per-user state
@@ -207,9 +239,24 @@ async function syncClaude() {
   // you own, leave user state alone" discipline keeps us out of settings.json).
   await copyTree(SOURCES.hooks, path.join(claudeDir, "hooks"));
 
+  // mcp/<name>.json -> .mcp.json  { "mcpServers": { "<name>": {...} } }
+  // .mcp.json is Claude Code's project-scope MCP path — repo root, not under
+  // .claude/. Unlike per-user state files (settings.local.json), agentry treats
+  // it as a fully generated artifact: author servers as mcp/*.json sources,
+  // never by editing .mcp.json directly. Written only when sources exist, and
+  // never deleted — agentry must not clobber a .mcp.json a user hand-authored
+  // before adopting agentry's MCP sync. See docs/decisions.md D20.
+  const claudeServers = await loadMcpServers();
+  if (claudeServers.length) {
+    await writeFile(
+      path.join(REPO_ROOT, ".mcp.json"),
+      toMcpServersJson(claudeServers),
+    );
+  }
+
   const manifest = {
     name: "agentry",
-    version: "0.7.0",
+    version: "0.8.0",
     description:
       "Author your AI coding agents and skills once. Sync them to every harness you use.",
     author: "MANVENDRA-github",
@@ -277,6 +324,15 @@ async function syncCursor() {
       await writeFile(dest, toCursorRule(source, { globs: globsForLanguage(language) }));
     }
   }
+
+  // mcp/<name>.json -> .cursor/mcp.json  { "mcpServers": { ... } }
+  // Cursor reads project MCP from .cursor/mcp.json, the same `mcpServers` shape
+  // as Claude. The whole .cursor/ tree was wiped at the top of this adapter, so
+  // any stale file is already gone — we simply (re)write when sources exist.
+  const cursorServers = await loadMcpServers();
+  if (cursorServers.length) {
+    await writeFile(path.join(cursorDir, "mcp.json"), toMcpServersJson(cursorServers));
+  }
 }
 
 /**
@@ -296,6 +352,11 @@ async function syncCursor() {
  * commands; the closest equivalent is `$skill-name` invocation, which the
  * converted skills already provide. Hooks are skipped too — Codex's
  * notification model differs and has no drop-in hooks directory.
+ *
+ * MCP servers are skipped. Codex stores them as TOML under [mcp_servers.<name>]
+ * inside the shared config.toml — merging there without a TOML serializer and
+ * without clobbering the user's other keys needs its own design. Claude, Cursor,
+ * and OpenCode all take a JSON map; Codex does not. Deferred — see D20.
  *
  * Only .codex/agents/skills/ is wiped on sync. The parent .codex/ directory
  * may hold Codex's per-user state (e.g. config.toml) and must be preserved —
@@ -386,7 +447,9 @@ async function syncCodex() {
  * 1:1, so agentry content keeps its natural shape and "owns" its names (the
  * installer's uninstall is name-based). Rules and hooks are deferred for
  * OpenCode — its rules model is AGENTS.md / the `instructions` config, a
- * separate mapping, and it has no drop-in hooks directory.
+ * separate mapping, and it has no drop-in hooks directory. MCP servers ARE
+ * synced — to opencode.json at the repo root, translated to OpenCode's shape
+ * (see the MCP step below and toOpenCodeMcpConfig).
  *
  * Only the generated subdirectories are wiped. The parent .opencode/ may hold
  * the user's opencode.json and other state — same "wipe what you own" discipline
@@ -432,6 +495,19 @@ async function syncOpenCode() {
     }
     const source = await fs.readFile(path.join(SOURCES.commands, entry.name), "utf8");
     await writeFile(dest, commandToOpenCode(source));
+  }
+
+  // mcp/<name>.json -> opencode.json  { "$schema": ..., "mcp": { ... } }
+  // OpenCode reads project MCP from opencode.json (repo root), under the `mcp`
+  // key, in its own shape — `type: local|remote`, a single `command` array, an
+  // `environment` map — so this is a real transform, not the pass-through Claude
+  // and Cursor use (see toOpenCodeMcpConfig). Like .mcp.json, opencode.json sits
+  // outside the wiped .opencode/ namespace and may hold the user's other
+  // OpenCode config, so agentry writes it only when sources exist and never
+  // deletes it. See docs/decisions.md D20.
+  const ocServers = await loadMcpServers();
+  if (ocServers.length) {
+    await writeFile(path.join(REPO_ROOT, "opencode.json"), toOpenCodeMcpConfig(ocServers));
   }
 }
 
