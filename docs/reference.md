@@ -70,15 +70,15 @@ These content types ship today. Each lives in a separate top-level directory and
 - **Required frontmatter:** `description`. (Claude Code does not require `name` for commands.)
 - **Optional frontmatter:** `argument-hint` (string shown in the command prompt UI).
 - **Body:** Markdown instructions that run when the user invokes `/<name>`. `$ARGUMENTS` is substituted at invocation time.
-- **Harness support:** Claude Code only. Cursor and Codex skip commands — see [`decisions.md`](./decisions.md) D8.
+- **Harness support:** Claude Code and OpenCode. Cursor and Codex skip commands — see [`decisions.md`](./decisions.md) D8.
 
 ### Rule
 
 - **Location:** `rules/<category>/<rule-name>.md`. Category is a language identifier (`typescript`, `python`, `go`) or topic (`security`, `performance`).
 - **Required frontmatter:** `name` (matches filename without `.md`), `description` (≥ 20 chars).
-- **Optional frontmatter:** `language` (forward-compatible field; not yet used to derive Cursor globs).
+- **Optional frontmatter:** `language` (used since v0.6 to derive Cursor auto-attach globs — see `globsForLanguage` in `scripts/cursor-transform.js`).
 - **Body:** Tight, single-concern guidance. No code samples.
-- **Harness support:** Claude Code (verbatim copy), Cursor (`.mdc` with `alwaysApply: false`). Codex deferred to v0.4.
+- **Harness support:** Claude Code (verbatim copy); Cursor (`.mdc`, auto-attached via `language`-derived globs since v0.6, otherwise `alwaysApply: false`); Codex (converted to a skill via `ruleToSkill` since v0.6). OpenCode deferred — its rules model is `AGENTS.md` plus the `instructions` config.
 
 ### MCP server
 
@@ -97,17 +97,17 @@ The sync entry point. Parses CLI flags, dispatches to one or more adapters, and 
 
 - **No exports.** Side-effect-only script invoked by `npm run sync`.
 - **Internal structure:**
-  - `SOURCES` — map of source directory absolute paths (agents, skills, commands, rules).
-  - `ALL_TARGETS` — `["claude", "cursor", "codex"]`.
+  - `SOURCES` — map of source directory absolute paths (agents, skills, commands, rules, hooks, mcp).
+  - `ALL_TARGETS` — `["claude", "cursor", "codex", "opencode"]`.
   - `parseTargets(value)` — splits a comma list of targets, separates valid from unknown.
   - File helpers — `rel`, `exists`, `readDirSafe`, `copyFile`, `writeFile`, `rmGenerated`, `copyTree`. All respect `--dry-run`.
-  - Adapters — `syncClaude`, `syncCursor`, `syncCodex` (documented inline with JSDoc).
+  - Adapters — `syncClaude`, `syncCursor`, `syncCodex`, `syncOpenCode` (documented inline with JSDoc).
   - `ADAPTERS` — dispatch map from target name to adapter function.
-- **Imports:** `node:fs/promises`, `node:path`, `node:url`, and the two transform modules. No third-party deps.
+- **Imports:** `node:fs/promises`, `node:path`, `node:url`, and the four transform modules (`cursor-transform`, `codex-transform`, `opencode-transform`, `mcp-transform`). No third-party deps.
 
 ### `frontmatter.js`
 
-Shared frontmatter parser and validation helpers. Three call sites: `lint-frontmatter.js`, `doctor.js`, and `cursor-transform.js` (via `codex-transform.js` too).
+Shared frontmatter parser and validation helpers. Call sites: `lint-frontmatter.js`, `doctor.js`, and the `cursor-transform.js`, `codex-transform.js`, and `opencode-transform.js` transforms.
 
 - **`parseFrontmatter(content)`** — Parses the leading `---...---` block. Returns `{ fields, body, raw }` or `null` if no block is detected. Accepts CRLF. Treats array-shaped values (`tools: [Read, Grep]`) as literal strings — no structured array parsing.
 - **`checkRequired(fields, requiredKeys)`** — Returns the subset of `requiredKeys` absent or empty in `fields`. Preserves input key order.
@@ -235,6 +235,7 @@ Installers are POSIX shell (`scripts/install.sh`) and PowerShell (`scripts/insta
 | `claude` | `--user`, `--project` | `--user` | `.claude/` | `agents`, `skills`, `commands`, `rules` |
 | `cursor` | `--project` only | `--project` | `.cursor/` | `agents`, `rules` |
 | `codex` | `--user`, `--project` | `--user` | `.codex/agents/` | `skills` |
+| `opencode` | `--user`, `--project` | `--user` | `.opencode/` | `agents`, `commands`, `skills` |
 
 ### Destination per scope
 
@@ -245,6 +246,8 @@ Installers are POSIX shell (`scripts/install.sh`) and PowerShell (`scripts/insta
 | `cursor --project` | `$PWD/.cursor/` |
 | `codex --user` | `$HOME/.agents/` (Unix) or `$env:USERPROFILE\.agents\` (Windows) |
 | `codex --project` | `$PWD/.agents/` |
+| `opencode --user` | `$HOME/.config/opencode/` (Unix) or `$env:USERPROFILE\.config\opencode\` (Windows) |
+| `opencode --project` | `$PWD/.opencode/` |
 | `cursor --user` | Rejected with an explicit error: Cursor has no user-level config dir. |
 
 ### Install algorithm
@@ -351,7 +354,7 @@ Covers `validateServer`, `toMcpServersJson`, `toOpenCodeMcpConfig`:
 | `sync` | `node scripts/sync-harnesses.js` | Regenerate all harness directories from source. |
 | `sync:dry` | `node scripts/sync-harnesses.js --dry-run` | Log what sync would do without touching the filesystem. |
 | `doctor` | `node scripts/doctor.js` | Report installation health. |
-| `lint` | `node scripts/lint-frontmatter.js` | Validate frontmatter on agents and skills. |
+| `lint` | `node scripts/lint-frontmatter.js` | Validate frontmatter on agents and skills, plus MCP server JSON. |
 | `test` | `node --test` | Run unit tests (built-in discovery finds `tests/*.test.js`; no path arg, so it works across Node 20 and 24). |
 
 Node engine requirement: `>=18.0.0`. No runtime dependencies; no devDependencies.
@@ -369,7 +372,7 @@ Generated directories `.claude/`, `.cursor/`, `.codex/`, `.claude-plugin/` are t
 
 ### CI workflow (`.github/workflows/sync-check.yml`)
 
-Three jobs, all on `ubuntu-latest` with Node 20, running on pushes and PRs to `main` and `dev`:
+Three jobs, all on `ubuntu-latest` with Node 24, running on pushes and PRs to `main` and `dev`:
 
 1. **`sync-determinism`** — `npm run sync`, then `git status --porcelain` fails the build if sync produced uncommitted changes. Catches the common contribution mistake of editing source without committing regenerated harness files.
 2. **`frontmatter-lint`** — `npm run lint`. Catches malformed agent/skill frontmatter.
@@ -388,5 +391,5 @@ None. The scripts read no environment configuration beyond what their CLI flags 
 - [`CLAUDE.md`](../CLAUDE.md) — AI assistant operating guidance for the repo.
 - [`architecture.md`](./architecture.md) — adapter pattern, sync engine design, source-of-truth layout, settings preservation, Codex adapter narrative.
 - [`authoring.md`](./authoring.md) — step-by-step authoring of agents, skills, and rules.
-- [`decisions.md`](./decisions.md) — numbered design decisions (D1–D19) with rationale, alternatives, and revisit triggers.
+- [`decisions.md`](./decisions.md) — numbered design decisions (D1–D20) with rationale, alternatives, and revisit triggers.
 - [`../CHANGELOG.md`](../CHANGELOG.md) — release history and deferred work.
