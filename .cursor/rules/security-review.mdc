@@ -1,0 +1,47 @@
+---
+name: security-review
+description: Self-review security discipline applied while writing — walk the threat model of the change (untrusted input, authz, secrets, crypto, dependencies) before handing it off. Invoke before declaring security-relevant code complete or committing it. The in-conversation companion to the security-reviewer agent; for a focused pass on a large diff in fresh context, delegate to that agent.
+alwaysApply: false
+---
+
+# Security review
+
+The discipline of walking the threat model of your own change before someone else — or an attacker — does. Most security holes are not exotic; they are an unsanitized input, a missing authorization check, a secret in a log, a default left open. They are cheap to catch at the moment you write the code and expensive everywhere after. This is the pass you run on your own diff before you call it done: think like someone trying to misuse it, not like someone trying to ship it.
+
+This is the in-conversation companion to the `security-reviewer` agent. Run this discipline as you write security-relevant code; delegate to the agent for a focused, cold-context pass over a large or sensitive diff.
+
+## When to invoke
+
+- Before declaring complete any code that handles untrusted input, authenticates or authorizes, touches secrets or crypto, or adds a dependency.
+- Adding or changing an endpoint, a route, a query, a file path, a shell call, or a deserialization step.
+- Wherever data crosses a trust boundary — user → server, service → service, config → code.
+
+## When NOT to invoke
+
+- A change with no untrusted input and no privileged action — a pure refactor of internal logic, a doc edit, a test-only change. Inventing a threat model for code with no attack surface is noise.
+- As a substitute for a real security audit on a high-risk system. This discipline catches the common, self-inflicted holes; a system handling serious risk still needs dedicated review and testing.
+
+## Walk the threat model
+
+For the change in front of you, ask the questions an attacker would:
+
+- **Input.** What untrusted data reaches this code, and where does it go? Trace it to every sink: SQL, HTML, a shell command, a filesystem path, a template, a redirect, a deserializer. Each sink has a safe form — parameterized query, output encoding, argument array, path canonicalization. Use it, never the string concatenation next to it.
+- **Authentication and authorization.** Who is allowed to do this, and where is that checked? A new endpoint without an authz check is the most common serious bug. Verify the check is present, runs before the action, and tests the right subject against the right resource — not just "is logged in" when it should be "owns this record."
+- **Secrets.** Does this introduce a key, token, or password? It belongs in config or a secret store the deployment expands, never in source, and never in a log line, error message, or response body. Check what you log on the *failure* path, not just the happy one.
+- **Crypto.** If you reached for cryptography, are you using a vetted library's high-level function, a current algorithm, and a random IV/salt from a CSPRNG? Hand-rolled crypto and `Math.random()` for anything security-bearing are findings on sight.
+- **Dependencies.** Did you add one? Is it maintained, reasonably sized for the job, and free of known advisories? Each dependency is attack surface you now own.
+- **Defaults and errors.** What happens when something is unspecified or fails? Default to closed: deny on missing permission, reject on unparseable input, fail without leaking a stack trace, an internal path, or a SQL fragment to the caller.
+
+## What to do with a finding
+
+- Fix it at the sink, with the safe construct — not by trying to sanitize the input upstream and hoping you covered every path. Encoding at the point of use is robust; blocklist filtering at the door is not.
+- If you cannot fix it now, do not let it pass silently. Name it, and treat it as blocking for anything touching auth, secrets, or untrusted input until it is resolved.
+- When in doubt about exploitability, assume it is exploitable and close it. The cost of closing a non-bug is small; the cost of shipping a real one is not.
+
+## Anti-patterns
+
+- **Trusting input because it came from your own frontend.** The frontend is not a trust boundary; anyone can call the endpoint directly. Validate at the server, every time.
+- **Sanitizing by blocklist.** Stripping `<script>` or escaping the quotes you thought of leaves the ones you did not. Use the context's safe encoder or a parameterized API, which handle the cases you would miss.
+- **Checking authentication and calling it authorization.** "Is there a valid session" is not "is this user allowed to touch this object." The second is the one that gets skipped.
+- **Secrets in logs.** Logging the request, the headers, or the exception object, and shipping the token to your log aggregator with it. Scrub before you log.
+- **Security review as a final gate only.** Deferring all of it to a pre-release pass means rediscovering and reworking decisions baked in weeks earlier. The threat model is cheapest to walk while the code is under your hands.
