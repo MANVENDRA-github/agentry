@@ -23,9 +23,9 @@ Each arrow is one well-defined transformation. Source files never change as a si
 
 | Directory | Contents | Status |
 |---|---|---|
-| `agents/` | `<name>.md` per agent. Frontmatter + system prompt body. | Active in v0.1 (Claude Code, Cursor); converted to skills for Codex via v0.3. |
-| `skills/` | `<name>/SKILL.md` per skill (plus any siblings the skill bundles). | Active in v0.1 (Claude Code, Cursor); Codex support added in v0.3. |
-| `commands/` | `<name>.md` per slash command. | Active in v0.2 (Claude Code only) |
+| `agents/` | `<name>.md` per agent. Frontmatter + system prompt body. | Active in v0.1 (Claude Code, Cursor); converted to skills for Codex (v0.3); OpenCode agents (v0.7). |
+| `skills/` | `<name>/SKILL.md` per skill (plus any siblings the skill bundles). | Active in v0.1 (Claude Code, Cursor); Codex (v0.3); OpenCode (v0.7). |
+| `commands/` | `<name>.md` per slash command. | Active in v0.2 (Claude Code; OpenCode since v0.7) |
 | `rules/` | `<category>/<rule-name>.md` per rule, namespaced by language (`typescript`, `python`, `go`) or topic (`security`, `performance`). | Active in v0.3 (Claude Code verbatim; Cursor as `.mdc` — auto-attached via `language`-derived globs since v0.6; Codex as a skill since v0.6). |
 | `hooks/` | `<name>.{sh,js}` per harness hook. | Active in v0.6 (Claude Code only) |
 | `mcp/` | `<name>.json` per MCP server. One harness-neutral server definition; the filename is the server name. | Active in v0.8 (Claude Code `.mcp.json`, Cursor `.cursor/mcp.json`, OpenCode `opencode.json`; Codex deferred) |
@@ -48,7 +48,7 @@ A sync run is fully idempotent. Running `npm run sync` twice produces the same t
 
 Each adapter does three things, in order:
 
-1. **Wipe** the harness-specific subdirectories it owns. For Cursor this is the whole `.cursor/` directory. For Claude Code it is only the `agents/`, `skills/`, and `commands/` subdirectories — see "Settings preservation" below for why.
+1. **Wipe** the harness-specific subdirectories it owns. For Cursor this is the whole `.cursor/` directory. For Claude Code it is only the `agents/`, `skills/`, `commands/`, and `rules/` subdirectories (with `hooks/` copied fresh) — see "Settings preservation" below for why.
 2. **Translate** each source file into the harness's expected format. Some translations are verbatim copy (Claude Code agents are markdown with the same frontmatter shape). Some are structural — Cursor's closest primitive to a skill is a `.mdc` rule, so `syncCursor` wraps source skills with `alwaysApply: false` in the frontmatter.
 3. **Write** a manifest if the harness needs one. `syncClaude` writes `.claude-plugin/plugin.json` describing the agentry plugin.
 
@@ -122,7 +122,7 @@ For non-trivial harnesses, open a GitHub issue first to discuss the source→tar
 
 Claude Code stores per-user state in `~/.claude/settings.local.json` (permissions cache) and other files at the top level of `~/.claude/`. `syncClaude` must not delete those when regenerating agentry content.
 
-The pattern: wipe only the subdirectories the adapter owns — `agents/`, `skills/`, `commands/` — not the parent `.claude/` directory. This is enforced in `rmGenerated` calls inside `syncClaude` and is the same pattern the installer follows when copying into `~/.claude/`.
+The pattern: wipe only the subdirectories the adapter owns — `agents/`, `skills/`, `commands/`, `rules/` — not the parent `.claude/` directory. This is enforced in `rmGenerated` calls inside `syncClaude` and is the same pattern the installer follows when copying into `~/.claude/`.
 
 Future adapters that interact with a harness storing per-user state should follow the same discipline. Wipe what you own. Leave alone what you don't.
 
