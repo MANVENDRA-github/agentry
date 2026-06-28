@@ -60,6 +60,9 @@ agents/ skills/ commands/ rules/ hooks/ mcp/      ← source of truth (edit thes
 | Agent | `e2e-runner` | Generates, maintains, and runs end-to-end tests for real user journeys — framework-agnostic, flakiness-averse. |
 | Agent | `dependency-upgrader` | Upgrades dependencies safely and incrementally — one group at a time, breaking changes read, build green after each. |
 | Agent | `migrator` | Plans and executes staged, reversible migrations (data, schema, API, framework) — no big-bang, with a rollback path. |
+| Agent | `code-explorer` | Maps an unfamiliar codebase — entry points, the path an operation takes, and where responsibilities live, with file:line anchors. |
+| Agent | `test-reviewer` | Reviews existing tests for whether they actually protect behavior — real assertions over mock calls, edges and failure paths covered. |
+| Agent | `performance-optimizer` | Fixes a measured performance problem end to end — baseline, profile, one change, re-measure — with behavior held constant. |
 | Skill | `tdd-workflow` | Test-first development with explicit red-green-refactor loops. |
 | Skill | `test-writing` | Adds tests to code that already exists, characterizing current behavior. |
 | Skill | `code-review` | Self-review discipline before handing a change to another reviewer. |
@@ -73,8 +76,13 @@ agents/ skills/ commands/ rules/ hooks/ mcp/      ← source of truth (edit thes
 | Skill | `strategic-compact` | Compact the working context deliberately at task boundaries instead of at an arbitrary auto-truncation point. |
 | Skill | `continuous-learning` | Turn a hard-won session insight into a durable, reusable note before it scrolls away. |
 | Skill | `release-notes` | Turn a release's commits into notes for the reader deciding whether to upgrade — breaking changes first, not a commit dump. |
+| Skill | `security-review` | Walk the threat model of your own change before you ship it — input, authz, secrets, crypto, dependencies. Companion to the `security-reviewer` agent. |
+| Skill | `observability` | Make a system debuggable from the outside — structured logs, the right levels, metrics, tracing, never secrets in logs. |
+| Skill | `mcp-authoring` | Build a Model Context Protocol server a model can actually use — clear tool descriptions, tight schemas, structured errors, no hardcoded secrets. |
+| Skill | `data-modeling` | Design and evolve a data schema deliberately — entities, keys, indexing for the real queries, constraints, safe expand-and-contract change. |
+| Skill | `resilience` | Design for failure on purpose — timeouts, bounded retries with backoff, idempotency, circuit breakers, graceful degradation. |
 
-Fifteen slash commands wrap the most-used agents and skills: `/plan`, `/review`, `/debug`, `/commit`, `/handoff`, `/refactor`, `/document`, `/architect`, `/security-review`, `/build-fix`, `/verify`, `/e2e`, `/upgrade-deps`, `/migrate`, `/release-notes`. They sync to Claude Code and OpenCode — the two harnesses with a user-extensible command primitive — while Cursor and Codex receive the underlying agents and skills only. All four harnesses get the agents and skills behind these commands.
+Eighteen slash commands wrap the most-used agents and skills: `/plan`, `/review`, `/debug`, `/commit`, `/handoff`, `/refactor`, `/document`, `/architect`, `/security-review`, `/build-fix`, `/verify`, `/e2e`, `/upgrade-deps`, `/migrate`, `/release-notes`, `/explore`, `/review-tests`, `/optimize`. They sync to Claude Code and OpenCode — the two harnesses with a user-extensible command primitive — while Cursor and Codex receive the underlying agents and skills only. All four harnesses get the agents and skills behind these commands.
 
 One rule ships as a pattern proof for language-specific content: `rules/typescript/strict-mode.md`. Claude Code receives it verbatim; Cursor receives it as a `.mdc` rule auto-attached to `.ts`/`.tsx` files (via globs derived from its `language` field); Codex receives it as a skill. (OpenCode's rules model — `AGENTS.md` and the `instructions` config — is a separate mapping, deferred.)
 
@@ -140,7 +148,7 @@ Other scripts:
 npm test
 ```
 
-67 tests run on Node's built-in test runner (`node:test`) with no external framework. They cover the transform layer — the part with real logic rather than file copying:
+98 tests run on Node's built-in test runner (`node:test`) with no external framework. They cover the transform layer — the part with real logic rather than file copying:
 
 - `tests/frontmatter.test.js` — the shared frontmatter parser and validators: CRLF endings, an empty body, a missing block, array-shaped values like `tools: [Read, Grep]`, a description that contains a colon, and the required-field and description-length checks.
 - `tests/cursor-transform.test.js` — `toCursorRule` across the with-frontmatter, without-frontmatter, and already-declares-`alwaysApply` cases, body-spacing normalization, and `globs` injection / `globsForLanguage` mapping.
@@ -158,7 +166,7 @@ CI (`.github/workflows/sync-check.yml`) runs three jobs on every push and pull r
 
 ## Status and limitations
 
-v0.7.0. Four harness adapters, nine agents, nine skills, eleven commands, one rule, and one hook. A few things are deliberately limited today, and the code says so plainly:
+v0.11.0. Four harness adapters, fifteen agents, eighteen skills, eighteen commands, one rule, one hook, and one MCP server. A few things are deliberately limited today, and the code says so plainly:
 
 - Commands sync to Claude Code and OpenCode, the two harnesses with a user-extensible command primitive. Cursor and Codex receive the agents and skills behind those commands, but not the commands themselves.
 - Hooks sync to Claude Code only. Cursor, Codex, and OpenCode have no drop-in hooks directory; their event models differ and need a dedicated mapping.
