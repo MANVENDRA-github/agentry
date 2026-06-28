@@ -1,0 +1,49 @@
+---
+name: agentry-observability
+description: Make a system debuggable in production — structured logging with the right levels and context, metrics for what matters, tracing across boundaries, and never secrets in logs. Invoke when adding or changing code whose failures you'll have to diagnose from the outside. Skip for throwaway scripts.
+---
+
+# Observability
+
+The discipline of building code you can diagnose from the outside, before you need to. When a system misbehaves in production you cannot attach a debugger to it; you have only what it emitted — its logs, its metrics, its traces. Observability is the decision, made while writing the code, to emit the signals that will answer "what is it doing and why" at 3am. The failure mode this prevents: an incident where the only honest answer to "what happened" is "we have no idea — add some logging and wait for it to recur."
+
+## When to invoke
+
+- Adding or changing code whose failures you will have to diagnose remotely — a request handler, a background job, an integration with another service, anything that runs unattended.
+- A boundary where things go wrong and the cause is not local: a network call, a queue consumer, a retry, a state transition.
+- After an incident where you could not see what happened — close the gap that blinded you.
+
+## When NOT to invoke
+
+- A throwaway script, a one-off migration you watch run, a pure function with no I/O and no failure mode worth tracing. Instrumentation there is cost without payoff.
+- As an excuse to log everything. Noise is the enemy of observability, not its goal — a log nobody can search is as useless as no log at all.
+
+## The three signals
+
+- **Logs** — discrete events with context. "What happened, to what, in what circumstances." The narrative you read when reconstructing an incident.
+- **Metrics** — aggregates over time. "How often, how many, how long." The numbers that alert you and show trends a single event cannot.
+- **Traces** — one operation's path across components. "Where did the time go and where did it fail," when the operation spans services or async hops.
+
+You rarely need all three for every change. Reach for the one that answers the question you will actually ask: logs for "why did this one request fail," metrics for "is this getting worse," traces for "which hop is slow."
+
+## Log so the 3am reader can act
+
+- **Structured, not prose.** Emit key–value fields (`user_id`, `order_id`, `duration_ms`, `status`), not interpolated sentences. Structured logs are queryable; "Processed order 4821 in 230ms" is a string you cannot filter, aggregate, or alert on.
+- **The right level, used consistently.** ERROR is something broke and needs attention; WARN is recovered-but-notable; INFO is the significant state changes; DEBUG is the detail you mute in production. A log at the wrong level is either noise drowning signal or signal nobody sees.
+- **Context that ties it together.** Carry a correlation/trace id through the operation so its log lines assemble into one story. A lone "failed" with no id is unactionable.
+- **Cause on the error path.** When you log a failure, log *why* — the error, the inputs that mattered, the state. The log exists to answer the next question, not to announce that a question exists.
+- **Never secrets or PII.** No passwords, tokens, full card numbers, or personal data in a log line — it persists in your aggregator long after the request, and widens every breach. Scrub or omit before logging, and check the error path, where whole request objects tend to get dumped.
+
+## Metrics and traces, briefly
+
+- **Measure what you would alert or decide on** — error rate, latency distribution (p95/p99, not just the average), throughput, queue depth, saturation. A metric nobody watches is overhead.
+- **Prefer a few labels, low cardinality.** A metric tagged with `user_id` or a raw URL explodes into millions of series and breaks the backend. Tag with the bounded set — route, status class, region.
+- **Trace across the boundaries you cannot reason about locally.** Propagate the trace context so one slow request shows you the hop responsible, instead of four teams each insisting their service is fine.
+
+## Anti-patterns
+
+- **Unstructured string logs.** Human-readable, machine-useless. The moment you need "all failures for this customer," interpolated prose has failed you.
+- **Log-and-throw.** Logging an exception and then re-throwing it so a caller logs it again — the same error three times in the trace, none authoritative. Handle it or propagate it; log it once, where you have the most context.
+- **Secrets in the logs.** Called out twice because it is the costliest: a token in a log is a credential leak with a long tail.
+- **Logging in the hot loop.** A log line per item in a million-item loop drowns the signal and dominates the runtime. Log the summary, sample, or aggregate to a metric.
+- **Instrumenting only after the outage.** The signal you most need is the one from the failure you have not had yet. Add it where failure is plausible, not only where it already burned you.
