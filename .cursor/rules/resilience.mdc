@@ -1,0 +1,43 @@
+---
+name: resilience
+description: Design for failure on purpose — timeouts, retries with backoff and jitter, idempotency, circuit breakers, and graceful degradation at every boundary that can fail. Invoke when code calls a network, a queue, or any dependency that can be slow or down. Pairs with observability. Skip for pure in-process logic with no external calls.
+alwaysApply: false
+---
+
+# Resilience
+
+The discipline of designing for the failures you know are coming, instead of the sunny day you hope for. Every call across a boundary — a network request, a database query, a queue publish, a third-party API — will, given enough traffic and time, be slow, fail, time out, or return garbage. Resilience is deciding in advance what your code does when that happens, so a dependency's bad minute does not become your outage. The failure mode this prevents: one slow downstream service exhausting your threads, one transient blip surfacing as a user-facing error, one retry storm turning a hiccup into a cascade.
+
+Resilience pairs with `observability`: you cannot harden what you cannot see fail, and instrumentation is how you learn which boundaries actually break.
+
+## When to invoke
+
+- Writing code that calls anything it does not control in-process — a network service, a database, a cache, a queue, an external API.
+- A boundary where slowness or failure has blast radius: a synchronous call in a request path, a fan-out, a write that must not be lost or duplicated.
+- After an incident that propagated — one component's failure took down more than itself.
+
+## When NOT to invoke
+
+- Pure in-process logic with no external calls and no shared failure mode. A function that transforms data in memory does not need a circuit breaker.
+- Over-engineering a low-stakes path. A best-effort background poll that can simply run again next tick does not need the full apparatus; match the hardening to the cost of failure.
+
+## Design every remote call to fail well
+
+- **Timeouts on everything that crosses a boundary.** A call with no timeout waits forever, and a thread that waits forever is a thread that never serves another request — this is how one slow dependency exhausts a pool and takes you down. Set a bound shorter than your own deadline. The default "no timeout" is the wrong default.
+- **Retries, but only when they are safe and bounded.** Retry a *transient* failure (a timeout, a 503, a dropped connection) — not a deterministic one (a 400, a validation error); retrying that just fails again, slower. Cap the attempts. Use **exponential backoff with jitter** so a thousand clients retrying do not synchronize into a thundering herd that finishes off the recovering service.
+- **Idempotency where you retry a write.** A retry means the operation can run more than once. A read is naturally safe; a write is not, unless you make it so — an idempotency key, an upsert, a dedupe on a unique constraint. Retrying "charge the card" without idempotency is how a customer gets billed twice.
+- **Circuit breakers for a dependency that is down.** When a downstream has been failing, stop hammering it: trip the breaker, fail fast for a cooldown, then probe before closing. This sheds load from a struggling service so it can recover, and frees your own resources instead of queuing them against a black hole.
+- **Graceful degradation over total failure.** Decide what a partial outage looks like. Serve stale cache when the source is down, hide the recommendations widget when its service times out, queue the write to apply later — a degraded answer often beats an error page. Know which features are essential and which can shed.
+- **Bulkheads for isolation.** Do not let one slow dependency consume the resources every other request needs. Separate pools, queues, or limits per dependency keep a failure contained to the feature that owns it.
+
+## What to decide for each boundary
+
+For every call that can fail, have an answer to: how long do I wait (timeout)? do I retry, how many times, with what backoff? is the operation safe to repeat (idempotency)? what do I do when it is down for a while (degrade, breaker)? what does the caller see? "It will probably work" is not one of the answers.
+
+## Anti-patterns
+
+- **No timeout.** The single most common resilience bug. An unbounded wait turns a downstream slowdown into your own thread exhaustion and outage.
+- **Retrying everything, immediately, forever.** Retrying non-transient errors, with no cap and no backoff, converts a small failure into a self-inflicted DDoS on the service trying to recover.
+- **Retrying non-idempotent writes.** Duplicate charges, duplicate emails, duplicate orders — the data-corruption bug that hides until a flaky network triggers it.
+- **Catch-all that swallows the failure.** `catch (e) {}` around a remote call hides the failure from logs and metrics, so the outage is invisible until users report it. Handle it deliberately, and emit the signal.
+- **Hardening uniformly.** Wrapping every in-process function in retries and breakers adds complexity where there is no boundary to protect. Spend the effort at the boundaries that actually fail.

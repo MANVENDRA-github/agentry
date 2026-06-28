@@ -4,6 +4,33 @@ All notable changes to agentry are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.0] — comprehension and hardening content
+
+Curated content for the parts of the loop agentry hadn't reached: understanding code you didn't write, judging whether tests protect anything, and hardening a system for the real world. Content-only release; all components language- and framework-neutral (D9), each held to the curation bar (D10) — the universal gaps, not a catalog import from the maximalist alternatives.
+
+### Added
+
+**Agents:**
+- `code-explorer` — maps an unfamiliar codebase: entry points, the path an operation takes end to end, what each layer owns, and the few key abstractions, every hop anchored to file:line. The comprehension counterpart to `architect` (which designs new structure) and `planner` (which sequences a change) — it describes the shape that already exists.
+- `test-reviewer` — reviews existing tests for whether they actually protect behavior: real assertions over mock calls, edges and failure paths covered, not brittle or tautological. Complements `tdd-workflow`/`test-writing`, which write tests, with a quality lens; reports false confidence and coverage gaps, not a coverage percentage.
+- `performance-optimizer` — executes the `perf-profiling` discipline end to end: baseline, profile to locate the real bottleneck, one minimal change, re-measure on the same harness, behavior held constant. Returns a verified before/after, not a speculative rewrite. Where the skill is the method, the agent is the actor — the same pairing as `debugger`/`error-debugging`.
+
+**Skills:**
+- `security-review` — walk the threat model of your own change before shipping it: untrusted input to every sink, an authz check on every new action, secrets out of source and logs, vetted crypto, dependency risk. The in-conversation companion to the `security-reviewer` agent, completing the agent↔skill pairing `code-review`/`error-debugging` already follow.
+- `observability` — make a system debuggable from the outside: structured logs at the right levels with correlating context, metrics you'd actually alert on, tracing across boundaries, and never secrets or PII in a log line.
+- `mcp-authoring` — build a Model Context Protocol server a model can use well: descriptions as the contract, schemas as guardrails, errors as instructions, transport chosen for the deployment, secrets from the environment. On-brand — agentry already ships and syncs `mcp/`.
+- `data-modeling` — design and evolve a data model deliberately: entities and relationships, stable keys, indexing for the real access patterns, constraints in the schema, and expand-and-contract change you can roll out safely. Store-agnostic.
+- `resilience` — design for failure on purpose: timeouts on every boundary, bounded retries with backoff and jitter, idempotency where you retry a write, circuit breakers, and graceful degradation. Pairs with `observability`.
+
+**Commands** (Claude Code & OpenCode):
+- `/explore`, `/review-tests`, `/optimize` — wrappers for the three new agents.
+
+### Changed
+
+- README "What's inside" expanded with the three agents and five skills; the command count is now eighteen (`/explore`, `/review-tests`, `/optimize` added).
+- The "Status and limitations" summary, stale since v0.7.0 ("nine agents, nine skills, eleven commands"), corrected to the current counts — fifteen agents, eighteen skills, eighteen commands, one rule, one hook, one MCP server — and the test count refreshed to 98.
+- Plugin manifest version bumped to `0.11.0`.
+
 ## [0.10.0] — maintain-and-ship content
 
 Curated content completing the maintenance and release half of the dev loop — keeping dependencies current, moving the codebase between states safely, and writing a release for the reader who has to act on it. Content-only release; all components language- and framework-neutral (D9), each held to the curation bar (D10).
