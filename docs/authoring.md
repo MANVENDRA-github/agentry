@@ -4,9 +4,9 @@ This is the practical how-to for adding your first agent or skill to agentry. Re
 
 ## Before you author
 
-- **Read 2–3 existing files** in the same directory. `agents/code-reviewer.md` and `skills/tdd-workflow/SKILL.md` are the references for v0.1. Match their voice, format, and depth.
+- **Read 2–3 existing files** in the same directory. `agents/code-reviewer.md` and `skills/tdd-workflow/SKILL.md` are good references. Match their voice, format, and depth.
 - **Justify the addition.** Write down a one-line statement of the concrete problem the new agent or skill solves. If you cannot, the answer is "do not add it."
-- **Check it is universal.** v0.1 and v0.2 ship language- and framework-neutral content only. If your draft mentions specific libraries, frameworks, or language syntax, revise it to be universal or save it for a v0.3+ language pack.
+- **Check it is universal.** agentry ships language- and framework-neutral content only (decision D9, reaffirmed by D17). If your draft mentions specific libraries, frameworks, or language syntax, revise it to be universal. (Opt-in language packs remain a possible future direction; none ship today.)
 - **Search for overlap.** Does an existing skill or agent already do most of what you are about to add? Extend the existing one instead of duplicating.
 
 ## Authoring an agent
@@ -37,7 +37,7 @@ model: sonnet
 - `name` — must match the filename.
 - `description` — what the agent does and when to invoke it. See "Writing a good description" below.
 - `tools` — Claude Code tool names the agent is allowed to call. Pick the minimum it needs.
-- `model` — usually `sonnet` for v0.2. Reach for `opus` only if the task genuinely needs it.
+- `model` — usually `sonnet`. Reach for `opus` only if the task genuinely needs it.
 
 ### 3. Writing a good description
 
@@ -69,7 +69,7 @@ npm run sync
 ls .claude/agents/<name>.md          # should exist
 ls .cursor/agents/agentry-<name>.md  # should exist
 npm run lint                         # should pass
-git add agents/<name>.md .claude/agents/<name>.md .cursor/agents/agentry-<name>.md
+git add agents/<name>.md .claude/agents/<name>.md .cursor/agents/agentry-<name>.md .codex/agents/skills/agentry-<name>/SKILL.md .opencode/agents/<name>.md
 git commit -m "feat: add <name> agent"
 ```
 
@@ -85,7 +85,7 @@ A skill is a procedural protocol the main Claude follows during regular conversa
 skills/<name>/SKILL.md
 ```
 
-Skills live in their own directory because they may eventually bundle siblings (helper scripts, reference docs). For v0.2 there is only the one file.
+Skills live in their own directory because they may bundle siblings (helper scripts, reference docs) alongside `SKILL.md`; those are copied through to Claude Code, Codex, and OpenCode. Many skills ship as just `SKILL.md`.
 
 ### 2. Frontmatter
 
@@ -120,7 +120,7 @@ npm run sync
 ls .claude/skills/<name>/SKILL.md      # should exist
 ls .cursor/rules/<name>.mdc            # should exist
 npm run lint
-git add skills/<name>/SKILL.md .claude/skills/<name>/SKILL.md .cursor/rules/<name>.mdc
+git add skills/<name>/SKILL.md .claude/skills/<name>/SKILL.md .cursor/rules/<name>.mdc .codex/agents/skills/agentry-<name>/SKILL.md .opencode/skills/<name>/SKILL.md
 git commit -m "feat: add <name> skill"
 ```
 
@@ -178,7 +178,7 @@ A rule is a focused piece of guidance that should apply when the developer is wo
 - **Triggered by context, not user intent.** Skills get invoked because the user is doing something the skill helps with (TDD, debugging). Rules apply because the user is working in a specific context (TypeScript files, a security-sensitive area). The harness — not the user — decides when the rule kicks in.
 - **Smaller in scope per file.** A skill is a multi-step protocol. A rule is one tight piece of guidance ("use strict mode," "narrow types at API boundaries," "log structured errors"). One rule per file; one concern per rule.
 
-The v0.3 pattern proof ships one rule: `rules/typescript/strict-mode.md`. Read it as the reference for length, depth, and voice before authoring your own.
+agentry ships one rule as a pattern proof: `rules/typescript/strict-mode.md`. Read it as the reference for length, depth, and voice before authoring your own.
 
 ### 1. Create the file
 
@@ -200,7 +200,7 @@ language: <language identifier>   # optional, used by Cursor for context targeti
 
 - `name` — must match the filename (without `.md`).
 - `description` — names the trigger condition and the skip conditions, same discipline as skills. ≥20 characters.
-- `language` — optional. Present for language-specific rules; absent for topic rules. v0.3 does not yet derive Cursor globs from this field, but the field is preserved for forward compatibility.
+- `language` — optional. Present for language-specific rules; absent for topic rules. Since v0.6, Cursor globs are derived from this field for auto-attach (see `globsForLanguage` in `scripts/cursor-transform.js`); an unmapped language still ships as opt-in.
 
 ### 3. Body
 
@@ -211,8 +211,8 @@ Length: roughly 40–80 lines including frontmatter. Smaller than skills because
 ### 4. Per-harness behavior
 
 - **Claude Code:** copied verbatim to `.claude/rules/<category>/<rule-name>.md`. Available in the install location; CLAUDE.md can reference it explicitly.
-- **Cursor:** transformed to `.cursor/rules/<category>/<rule-name>.mdc` with `alwaysApply: false` added by `toCursorRule`. Opt-in for v0.3; a future enhancement can derive globs from `language` for auto-apply.
-- **Codex:** skipped in v0.3 — Codex has its own rules concept and the mapping needs dedicated investigation. Deferred to v0.4.
+- **Cursor:** transformed to `.cursor/rules/<category>/<rule-name>.mdc` by `toCursorRule`. Since v0.6, a rule whose `language` maps to a known glob set is written with `globs` + `alwaysApply: false` (Cursor's "Auto Attached" mode); an unmapped language ships as `alwaysApply: false` (opt-in).
+- **Codex:** converted to a skill named `agentry-<category>-<rule-name>` via `ruleToSkill` since v0.6 — Codex has no rules primitive distinct from skills.
 
 ### 5. Sync, verify, lint, commit
 
@@ -221,7 +221,7 @@ npm run sync
 ls .claude/rules/<category>/<rule-name>.md       # should exist
 ls .cursor/rules/<category>/<rule-name>.mdc      # should exist
 npm run lint                                     # should pass
-git add rules/<category>/<rule-name>.md .claude/rules/<category>/<rule-name>.md .cursor/rules/<category>/<rule-name>.mdc
+git add rules/<category>/<rule-name>.md .claude/rules/<category>/<rule-name>.md .cursor/rules/<category>/<rule-name>.mdc .codex/agents/skills/agentry-<category>-<rule-name>/SKILL.md
 git commit -m "feat: add <category>/<rule-name> rule"
 ```
 
