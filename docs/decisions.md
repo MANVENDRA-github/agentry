@@ -227,3 +227,19 @@ Companion reading: [`architecture.md`](architecture.md) for how the system is st
 **Install is deferred.** Sync produces the native files; the installers (D12) are not extended to place them. Installing MCP means *merging* into a user's existing config (`~/.claude.json`, a project `.mcp.json`, `.cursor/mcp.json`, `opencode.json`) without destroying servers they added themselves — a stateful merge, not the directory-copy the installers do today. Shipping a copy that silently overwrote a user's config would be the hostile default D5 warns against. Deferred until the merge is designed.
 
 **Revisit if.** Codex MCP support lands (needs the TOML path), or install grows a safe-merge step that can place MCP files without clobbering user servers.
+
+## Release
+
+### D21: Release cuts a GitHub Release from the tag and CHANGELOG — no npm publish
+
+**Decision.** `.github/workflows/release.yml` triggers on a `v*` tag push. It verifies the tag matches `package.json`'s version, re-runs the full gate (sync-drift check, `npm run lint`, `npm test`), extracts the matching `## [X.Y.Z]` section from `CHANGELOG.md`, and creates a GitHub Release with that section as the notes. It does **not** publish to npm.
+
+**Why no npm publish.** agentry installs by `git clone` + an install script (D12), not by `npm install agentry`. There is no package on the registry to publish. A publish step would imply a distribution channel the project does not use, and would need registry credentials for no benefit. The GitHub Release *is* the distribution artifact: a tagged, documented point users can clone.
+
+**Why regenerate the notes from CHANGELOG instead of writing them in the workflow.** The CHANGELOG is already the human-authored, curated record of each release (D10 discipline applied to release notes). Extracting the matching section keeps a single source of truth — the notes on GitHub are exactly what the CHANGELOG says, and cannot drift from it.
+
+**Why gate the tag on sync/lint/test.** A tag is a stronger claim than a push — it says "this is a release." Re-running the same checks CI runs on every push (D14) at the tagged commit guarantees a release can never be cut from a tree that drifts, fails lint, or fails tests, even if the tag is pushed from a stale local checkout. The tag-version/package-version match is the guard against tagging the wrong commit.
+
+**Why only stdlib and `gh`.** Consistent with D11's zero-dependency spirit: the workflow uses `actions/checkout`, `actions/setup-node`, and the `gh` CLI preinstalled on the runner — no third-party marketplace actions whose supply chain agentry would be trusting to cut its releases.
+
+**Revisit if.** agentry starts distributing through a package registry (then a publish job joins the release), or the release process grows steps (signing, provenance) that warrant a dedicated reusable workflow.
