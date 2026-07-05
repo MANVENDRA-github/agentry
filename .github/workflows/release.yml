@@ -1,0 +1,76 @@
+name: release
+
+# Cut a GitHub Release when a version tag is pushed. agentry installs by clone /
+# install script (not npm), so this does not publish a package — it gates the
+# tag on the same checks as every other push and publishes the CHANGELOG section
+# for that version as the release notes. Uses only the stdlib and the `gh` CLI
+# (preinstalled on the runner) — no third-party actions, matching agentry's
+# zero-dependency spirit. See docs/decisions.md D21.
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write # required to create the GitHub Release
+
+jobs:
+  release:
+    name: Cut GitHub Release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+
+      - name: Verify tag matches package.json version
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          TAG_VERSION="${TAG#v}"
+          if ! printf '%s' "$TAG_VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
+            echo "::error::Tag '$TAG' is not a vX.Y.Z version tag."
+            exit 1
+          fi
+          PKG_VERSION="$(node -p "require('./package.json').version")"
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "::error::Tag version ($TAG_VERSION) does not match package.json version ($PKG_VERSION)."
+            exit 1
+          fi
+
+      - name: Gate on sync determinism, lint, and tests
+        run: |
+          npm run sync
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "::error::Generated files drift from source at the tagged commit. Run 'npm run sync' and commit."
+            git status --short
+            exit 1
+          fi
+          npm run lint
+          npm test
+
+      - name: Extract this version's CHANGELOG section
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          # Pull the block from the matching "## [X.Y.Z]" heading up to the next
+          # "## [" heading. Uses index() for a literal match so it does not
+          # depend on how a given awk treats "\[" in a regex (mawk vs gawk).
+          awk -v ver="$TAG_VERSION" '
+            index($0, "## [" ver "]") == 1 { grab = 1; print; next }
+            grab && index($0, "## [") == 1 { exit }
+            grab { print }
+          ' CHANGELOG.md > release-notes.md
+          if [ ! -s release-notes.md ]; then
+            echo "::error::No CHANGELOG.md section found for version $TAG_VERSION."
+            exit 1
+          fi
+          echo "Release notes:"; cat release-notes.md
+
+      - name: Create the GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "${GITHUB_REF_NAME}" \
+            --notes-file release-notes.md
