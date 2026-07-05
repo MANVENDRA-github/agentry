@@ -4,6 +4,36 @@ All notable changes to agentry are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.14.0] — language coverage, platform skills, companion agents, and release automation
+
+Rounds out the glob-mapped languages that still lacked a rule, adds three neutral engineering-discipline skills, completes two D7 companion agent+skill pairs, and adds the one piece of release automation that fits a git-clone tool (D12): a tag-triggered GitHub Release built from the CHANGELOG. Also refreshes README counts that had drifted since v0.11.0. Same curation bar (D10); ECC remains a reference, not a target (D17).
+
+### Added
+
+**Rules:**
+- `ruby/nil-and-exception-safety` — `&.`/`fetch`/`dig` over blind access, rescue `StandardError` not `Exception`, never swallow an error, `frozen_string_literal`. Auto-attaches on `**/*.rb`.
+- `php/security-essentials` — `declare(strict_types=1)`, PDO prepared statements, escape on output, strict `===`, never `eval`/`extract` on input. Auto-attaches on `**/*.php`.
+- `swift/optionals-and-memory` — `guard let`/`if let`/`??` over force-unwrap, break ARC retain cycles with `[weak self]`/`unowned`. Auto-attaches on `**/*.swift`.
+
+**Skills:**
+- `feature-flags` — decouple deploy from release; flag categories and their lifespans, default off, test both branches, delete flags before they become debt.
+- `caching` — cache-aside, keys that include every input, TTL plus explicit invalidation, stampede protection, cache only what is expensive+reused+staleness-tolerant.
+- `incident-response` — mitigate before diagnosing, one incident commander, communicate on a cadence, preserve evidence, blameless postmortem with owned action items.
+
+**Agents (with slash-command wrappers):**
+- `api-designer` (`/design-api`) — designs an API contract before implementation: naming, error shapes, versioning, pagination, idempotency. Companion to the `api-design` skill (D7).
+- `data-modeler` (`/model-data`) — designs and evolves a data model: entities, keys, indexing for the real queries, constraints, safe expand-and-contract migration. Companion to the `data-modeling` skill (D7).
+
+**CI:**
+- `.github/workflows/release.yml` — on a `v*` tag, verifies the tag matches `package.json`, re-runs the sync/lint/test gate, extracts the matching `CHANGELOG.md` section, and creates a GitHub Release with it. No npm publish (D12); stdlib + `gh` only (D11 spirit). Rationale in `docs/decisions.md` **D21**.
+
+### Changed
+
+- README "Status and limitations" refreshed from the stale v0.11.0 counts to v0.14.0 (17 agents, 26 skills, 20 commands, 13 rules, 5 hooks, 2 MCP servers); the rule/hook/MCP/command paragraphs rewritten to reflect the current catalogs; the two new agents added to "What's inside".
+- `docs/decisions.md` gains **D21** (release-workflow rationale).
+- Plugin manifest version bumped to `0.14.0`.
+- `rules/` grows from ten to thirteen; skills to twenty-six; agents to seventeen; commands to twenty.
+
 ## [0.13.0] — more language rules, guard hooks, and platform-discipline skills
 
 Continues v0.12.0's pipeline-filling: four more language rules, two more MCP-agnostic content skills plus a concurrency one, two safety-net hooks, and a second MCP server — each held to the curation bar (D10). Language rules remain the deliberate D9 exception. Adds the first `mcp/` server beyond `filesystem`, exercising the MCP pipeline the way v0.12.0 exercised rules and hooks.
