@@ -4,6 +4,38 @@ All notable changes to agentry are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.0] — more language rules, guard hooks, and platform-discipline skills
+
+Continues v0.12.0's pipeline-filling: four more language rules, two more MCP-agnostic content skills plus a concurrency one, two safety-net hooks, and a second MCP server — each held to the curation bar (D10). Language rules remain the deliberate D9 exception. Adds the first `mcp/` server beyond `filesystem`, exercising the MCP pipeline the way v0.12.0 exercised rules and hooks.
+
+### Added
+
+**Rules:**
+- `java/null-safety` — model absence with `Optional`, never return `null` from a public API, guard boundaries with `Objects.requireNonNull`, honor `@Nullable` checkers. Auto-attaches on `**/*.java`.
+- `csharp/nullable-reference-types` — enable NRT project-wide, honor the `?` annotations, treat null-forgiving `!` as a smell. Auto-attaches on `**/*.cs`.
+- `cpp/resource-safety` — RAII owns every resource, smart pointers over raw owning pointers, no naked `new`/`delete`, rule of zero/five. Auto-attaches on `**/*.cpp`/`.hpp`/`.h`/`.cc`.
+- `kotlin/null-safety` — lean on the type system, `?.`/`?:`/`let` over `!!`, guard platform types at the boundary. Auto-attaches on `**/*.kt`/`.kts`.
+- `sql/injection-safety` — bound parameters always, never string-built SQL, allowlist un-bindable identifiers, least-privilege DB accounts. Auto-attaches on `**/*.sql`.
+- `bash/strict-mode` — `set -euo pipefail`, quote every expansion, `[[ ]]` over `[ ]`, `trap`/`mktemp` for cleanup. Auto-attaches on `**/*.sh`/`.bash`/`.zsh`.
+
+**Hooks:**
+- `block-force-push` — PreToolUse hook that blocks a force-push (`--force`/`-f`/`--force-with-lease`/`+refspec`) to a protected branch (main/master/release/develop), while allowing force-pushes to feature branches and ordinary pushes. Errs toward allowing.
+- `guard-dangerous-bash` — PreToolUse safety net that blocks a short list of unambiguously catastrophic shell shapes: recursive delete of a root/system path, world-writable recursive `chmod`, `curl|sh`, raw-device `dd`/`mkfs`/redirect, fork bomb.
+
+**Skills:**
+- `accessibility` — semantic HTML first, keyboard operability and visible focus, contrast and never-color-alone, accessible names, ARIA only as a last resort.
+- `containerization` — small, reproducible, non-root images: pinned base, multi-stage, cache-ordered layers, `.dockerignore`, no secrets in a layer, healthcheck.
+- `concurrency-safety` — prefer immutability and message-passing, protect shared mutable state with the right primitive, avoid check-then-act races and deadlocks, bound the concurrency.
+
+**MCP:**
+- `git` — the git MCP server (`uvx mcp-server-git`), the first `mcp/` entry beyond `filesystem`. Syncs to `.mcp.json`, `.cursor/mcp.json`, `opencode.json` (Codex MCP deferred, D20).
+
+### Changed
+
+- `scripts/cursor-transform.js` `LANGUAGE_GLOBS` gains `sql` and `bash` entries so the two new non-file-extension-obvious rules auto-attach in Cursor.
+- Plugin manifest version bumped to `0.13.0`.
+- `rules/` grows from four to ten; `hooks/` from three to five; skills to twenty-three; MCP servers from one to two.
+
 ## [0.12.0] — language rules, discipline hooks, and toolchain content
 
 Populates the two pipelines agentry ships but had barely used — `rules/` (one entry) and `hooks/` (one entry) — and adds the two engineering-discipline skills the catalog was missing. Content-only where it counts; each component held to the curation bar (D10), the universal gaps rather than a catalog import from the maximalist alternatives. Language rules are the deliberate exception to strict framework-neutrality (D9): they are per-language by nature and exercise the Cursor language-glob auto-attach path the rules pipeline already supports.
