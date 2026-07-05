@@ -1,0 +1,38 @@
+---
+name: agentry-go-error-handling
+description: Go error-handling discipline — check every error, wrap with context using `%w`, never discard with `_` without a reason, keep `panic` for programmer bugs. Apply when working in any Go file. Skip for throwaway spikes that will not be committed.
+---
+
+# Go error handling
+
+Go has no exceptions by design: an error is an ordinary value the caller is expected to look at. That is the whole contract, and it only works if you actually look. The most common Go bug is not a subtle race — it is an error that was returned, ignored, and turned into a nil-pointer panic three frames later. Handle the error where it happens, add enough context that the log line names the failure, and reserve panic for the cases that are genuinely unrecoverable.
+
+## What the discipline enforces
+
+- **Check every returned error at the call site.** If a function returns `(T, error)`, the `error` is not optional decoration — branch on it before you touch `T`.
+- **Wrap with context, preserving the chain.** `fmt.Errorf("loading config %q: %w", path, err)` — the `%w` verb keeps the original error inspectable; `%v` flattens it to a string and severs `errors.Is`/`errors.As`.
+- **Inspect with the errors package, not string matching.** `errors.Is(err, ErrNotFound)` for sentinel comparison, `errors.As(err, &target)` to reach a typed error's fields. Never `strings.Contains(err.Error(), "not found")` — that couples you to a message that will change.
+- **Model errors deliberately.** Package-level sentinels (`var ErrNotFound = errors.New("not found")`) for conditions callers branch on; a typed error (a struct implementing `error`) when the caller needs data from the failure.
+
+## When you may be tempted to cut a corner
+
+- **"This error can't happen."** Then it costs you one line to prove it: handle it or assign it to `_` with a comment saying why it is safe. An unhandled "impossible" error is the one that pages you at 3am.
+- **"I'll just return it, the caller can figure it out."** Returning `err` bare, layer after layer, produces a message with no trail — `no such file or directory` and no idea which file. Add context once per layer as it crosses a boundary.
+- **"Panic is easier than threading an error back."** Panic across an API boundary makes your function impossible to use safely. A library returns errors; it does not decide to crash its caller's process.
+- **"The deadline is now."** A `TODO: handle error` with a ticket is honest debt. A silently dropped error is a bug you will not find until it fires.
+
+## What to do when you hit one
+
+- **A returned error you don't know how to handle.** Wrap it with context and return it — do not swallow it. The decision to give up belongs to a caller with more context, not to a silent `_`.
+- **An error from `defer f.Close()` on a file you wrote to.** A failed close on a writer can mean lost data. Capture it: `defer func() { err = errors.Join(err, f.Close()) }()` with a named return, rather than `defer f.Close()` that throws the error away.
+- **A `panic` reaching a goroutine or request boundary.** Recover at that boundary only — a top-level HTTP handler, a worker loop — convert it to an error or a 500, and log it. Do not sprinkle `recover` as flow control.
+- **The same error logged and returned.** Pick one. Log at the top where you handle it, or return it for the caller to log — not both, or every failure appears three times in the log.
+
+## What you do not do
+
+- **`_ = doSomething()` on a fallible call** without a comment justifying why the error is safe to drop.
+- **`if err != nil { return err }` with no context** at a boundary where the caller cannot tell what failed. Wrap it.
+- **`fmt.Errorf("...: %v", err)`** when a caller might need to inspect the cause. Use `%w`.
+- **String-matching on `err.Error()`** to decide control flow. Use sentinels and `errors.Is`/`errors.As`.
+- **`panic` for an expected failure** — bad input, a missing file, a down dependency. Those are return values, not crashes.
+- **Naked returns in a long function** where the returned error was set implicitly. Return it explicitly so the reader sees what leaves.
