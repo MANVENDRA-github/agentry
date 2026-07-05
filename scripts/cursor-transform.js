@@ -30,6 +30,8 @@ export const LANGUAGE_GLOBS = {
   kotlin: "**/*.kt,**/*.kts",
   csharp: "**/*.cs",
   cpp: "**/*.cpp,**/*.cc,**/*.hpp,**/*.h",
+  sql: "**/*.sql",
+  bash: "**/*.sh,**/*.bash,**/*.zsh",
 };
 
 /**
