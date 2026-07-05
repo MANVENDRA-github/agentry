@@ -7,6 +7,14 @@
         "@modelcontextprotocol/server-filesystem",
         "."
       ]
+    },
+    "git": {
+      "command": "uvx",
+      "args": [
+        "mcp-server-git",
+        "--repository",
+        "."
+      ]
     }
   }
 }

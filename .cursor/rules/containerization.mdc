@@ -1,0 +1,40 @@
+---
+name: containerization
+description: Build container images that are small, reproducible, cache-friendly, and non-root, with no secrets baked into a layer. Invoke when writing or changing a Dockerfile, a container build, or an image's base/runtime. Skip for projects with no container in the build or deploy path.
+alwaysApply: false
+---
+
+# Containerization
+
+A container image is a build artifact you ship, and like any artifact it can be done well or badly with the same effort. A bad image is a gigabyte of build tools running as root off a `latest` base that resolves differently every week, with your cloud credentials frozen into layer three. A good one is a lean, pinned, reproducible runtime that starts fast, rebuilds only what changed, runs as an unprivileged user, and carries no secrets. The difference is a handful of decisions in the Dockerfile, made deliberately.
+
+## When to invoke
+
+- Writing or changing a `Dockerfile` or an equivalent build (`Containerfile`, buildpacks, `ko`, Nixpacks).
+- Choosing or upgrading a base image, or changing what the runtime image contains.
+- Reviewing an image for size, reproducibility, privilege, or leaked secrets.
+
+## When NOT to invoke
+
+- A project with no container in its build or deploy path.
+- Orchestration concerns (Kubernetes manifests, compose topology, networking) — this is about the image itself; the deployment around it is a separate discipline.
+
+## The discipline
+
+- **Pin the base.** Use a specific tag, and a digest (`python:3.12-slim@sha256:...`) where reproducibility matters — `latest` makes every build a different build and every incident harder to reproduce. Prefer a slim or distroless base: less to download, less to patch, less attack surface.
+- **Multi-stage builds.** Compile and install build-time dependencies in a `builder` stage; copy only the finished artifact into a minimal runtime stage. The shipped image should contain what runs, not the toolchain that built it.
+- **Order layers for the cache.** Docker caches layers top-down and invalidates everything after the first change. Copy dependency manifests and install dependencies *before* copying source, so an ordinary code edit reuses the (slow) dependency layer instead of reinstalling every time.
+- **`.dockerignore`.** Keep `.git`, `node_modules`, local env files, build output, and secrets out of the build context — they slow the build, bloat layers, and risk copying a credential in with a broad `COPY . .`.
+- **No secrets in the image.** Anything in an `ENV`, an `ARG`, or a `COPY`ed file is baked into the layer history and recoverable even if a later layer deletes it. Inject secrets at *runtime* (env vars, mounted files, a secrets manager) or use build-time secret mounts (`RUN --mount=type=secret`) that don't persist.
+- **Run as non-root.** Create and switch to an unprivileged `USER`. A process running as root in a container is one escape away from root on concerns you didn't intend. Drop capabilities you don't need.
+- **One concern per image, and make it observable.** A container runs one main process; define a `HEALTHCHECK` (or an app health endpoint the orchestrator probes) so the platform knows when it is actually ready and alive.
+
+## Anti-patterns
+
+- **`FROM ...:latest`.** Unpinned and irreproducible. Pin the tag, ideally the digest.
+- **Secrets in `ENV`/`ARG` or a copied `.env`.** They live in the layer history forever. Inject at runtime.
+- **`COPY . .` with no `.dockerignore`.** Drags in `.git`, local secrets, and junk, and busts the cache on every change.
+- **Installing dependencies after copying source.** Every code edit reinstalls everything. Copy manifests and install first.
+- **Running as root.** Add a `USER`.
+- **Leaving the package-manager cache in the layer** (`apt-get` lists, pip/npm caches) instead of cleaning it in the same `RUN`. Dead weight in the shipped image.
+- **A fat single-stage image** carrying compilers and dev headers into production.
