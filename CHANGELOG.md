@@ -4,6 +4,33 @@ All notable changes to agentry are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.0] — language rules, discipline hooks, and toolchain content
+
+Populates the two pipelines agentry ships but had barely used — `rules/` (one entry) and `hooks/` (one entry) — and adds the two engineering-discipline skills the catalog was missing. Content-only where it counts; each component held to the curation bar (D10), the universal gaps rather than a catalog import from the maximalist alternatives. Language rules are the deliberate exception to strict framework-neutrality (D9): they are per-language by nature and exercise the Cursor language-glob auto-attach path the rules pipeline already supports.
+
+### Added
+
+**Rules:**
+- `python/type-safety` — annotate every signature, run mypy/pyright in strict mode, treat `Any` and bare `# type: ignore` as smells. Auto-attaches on `**/*.py` in Cursor.
+- `go/error-handling` — check every error, wrap with `%w` to preserve the chain, `errors.Is`/`errors.As` over string matching, `panic` reserved for programmer bugs. Auto-attaches on `**/*.go`.
+- `rust/error-handling` — return `Result`, keep `unwrap`/`expect`/`panic!` out of library and request paths, propagate with `?` and typed errors. Auto-attaches on `**/*.rs`.
+
+**Hooks:**
+- `block-no-verify` — PreToolUse hook that blocks `git commit`/`git push --no-verify`, `git commit -n`, and signing bypasses, while allowing `git push -n` (dry-run). Enforces "never skip the project's quality gates."
+- `secret-scan-on-edit` — PreToolUse hook that scans Write/Edit/MultiEdit content for high-signal secrets (cloud keys, private-key headers, provider tokens, hardcoded secret assignments) and blocks the write, skipping `*.example`/placeholder files. A fast net, not a replacement for a CI secret scanner.
+
+**Skills:**
+- `eval-harness` — the test-suite discipline for non-deterministic LLM/agent systems: a fixed dataset, graders matched to the task, a measured baseline, regressions gated in CI. Fills the "how do you know the agent got better" gap.
+- `supply-chain-security` — treat every dependency as untrusted input: pin and lock, audit advisories, vet a new dependency before adding it, and read install scripts. Complements `security-review`, which covers your own code.
+
+**CI:**
+- `.github/dependabot.yml` — weekly grouped updates for the `npm` and `github-actions` ecosystems, capped for reviewable PR volume.
+
+### Changed
+
+- Plugin manifest version bumped to `0.12.0`.
+- `rules/` grows from one entry to four; `hooks/` from one to three; skills to twenty.
+
 ## [0.11.0] — comprehension and hardening content
 
 Curated content for the parts of the loop agentry hadn't reached: understanding code you didn't write, judging whether tests protect anything, and hardening a system for the real world. Content-only release; all components language- and framework-neutral (D9), each held to the curation bar (D10) — the universal gaps, not a catalog import from the maximalist alternatives.
