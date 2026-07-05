@@ -1,0 +1,39 @@
+---
+name: nil-and-exception-safety
+description: Ruby nil- and exception-safety discipline — reach for `&.`/`fetch`/`dig` over blind access, rescue `StandardError` not `Exception`, never swallow an error silently. Apply when working in any Ruby file. Skip for a throwaway one-liner or an irb spike.
+language: ruby
+globs: **/*.rb
+alwaysApply: false
+---
+
+# Ruby nil and exception safety
+
+Ruby is permissive by design: `nil` responds to almost nothing but is accepted almost everywhere, `hash[:missing]` returns `nil` instead of complaining, and `rescue` will happily catch far more than you meant. That permissiveness is pleasant until a `nil` propagates three methods past where it was introduced and dies as `NoMethodError: undefined method for nil`, or an over-broad `rescue` swallows the `Interrupt` that was trying to stop your process. The discipline is to be deliberate where Ruby is lax: access values in a way that fails informatively, and rescue exactly the errors you can actually handle.
+
+## What the discipline enforces
+
+- **Access that fails where the problem is.** `hash.fetch(:key)` raises a `KeyError` naming the missing key at the access site, instead of returning `nil` that explodes later; `fetch(:key, default)` when a default is genuinely fine. `dig` for nested access that may be absent. `&.` (safe navigation) to call through a value that is legitimately nilable — not as a blanket to silence every possible nil.
+- **Rescue `StandardError`, never bare `Exception`.** A bare `rescue` (or `rescue Exception`) catches `SignalInterrupt`, `NoMemoryError`, and `SystemExit` — things you must not swallow. `rescue => e` defaults to `StandardError`, which is what you want; name the specific error class when you can handle only some.
+- **Every rescue does something.** Log it, wrap and re-raise it with context, retry with a bound, or convert it to a domain error. A `rescue` whose body is empty (or just `nil`) turns a failure into a silent wrong answer.
+- **Freeze what should not change.** `# frozen_string_literal: true` at the top of every file — it catches accidental mutation of a shared string literal and is the modern default.
+
+## When you may be tempted to cut a corner
+
+- **"`hash[:key]` is shorter than `fetch`."** It is, and it returns `nil` for both "absent" and "present but nil," collapsing a distinction you often need. `fetch` keeps them separate and fails loudly on the case you didn't expect.
+- **"I'll wrap the whole method in a `rescue` to be safe."** A broad rescue is not safety; it is a blindfold. It hides the `TypeError` from a real bug alongside the `Net::TimeoutError` you meant to handle. Rescue narrowly, near the call that can fail.
+- **"`&.` everywhere means I never get a nil error."** It also means a `nil` flows silently through your whole chain and produces a `nil` result no one checked. Use `&.` where nil is expected; fix the source where it is not.
+
+## What to do when you hit one
+
+- **A value that might be nil.** Decide which it is: legitimately optional (use `&.` / `dig` / a default) or a bug upstream (fix the source and let it be non-nil). Do not paper a real bug with safe-navigation.
+- **A missing hash/env key.** `fetch` with a clear error or an explicit default; for config, `ENV.fetch("VAR")` so a missing variable fails at boot, not at 3am.
+- **A method that can raise.** Rescue the specific class (`rescue ActiveRecord::RecordNotFound`), handle it, and let everything else propagate. If you must catch broadly at a boundary, log with the backtrace and re-raise or convert.
+- **A collection with nils.** `compact` to drop them, or `map { ... }.compact`, rather than guarding every downstream use.
+
+## What you do not do
+
+- **`rescue Exception` or a bare `rescue`** at method scope — you will swallow signals and out-of-memory. Rescue `StandardError` or a specific subclass.
+- **An empty `rescue` body** that turns an error into a silent `nil`. Every rescue handles or re-raises.
+- **`hash[:key]`** where a missing key is a real error — use `fetch`.
+- **`&.` chains as a nil blanket** that hides where the nil actually came from.
+- **Monkey-patch a core class** (`String`, `Hash`, `NilClass`) to add nil tolerance globally. Fix the call site; do not change the language for the whole process.
