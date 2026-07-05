@@ -1,0 +1,40 @@
+---
+name: agentry-python-type-safety
+description: Python static typing discipline — annotate every signature, run a strict type checker, treat escape hatches as code smells. Apply when working in any Python file. Skip for throwaway scripts and notebooks where the code will not outlive the session.
+---
+
+# Python type safety
+
+Python's runtime is dynamic; your development loop does not have to be. A strict type checker catches the class of bug that unit tests miss and refactors introduce. Annotate every function signature and every non-trivial local, then run mypy (`--strict`) or pyright in strict mode in CI. Type safety is not a stretch goal — skip the checker and you give up the one tool that verifies your data actually flows the way you think it does.
+
+## What strict checking enforces
+
+- `disallow_untyped_defs` — every function must annotate its parameters and return type.
+- `disallow_any_generics` — no bare `list`, `dict`, `Callable`; parameterize them (`list[str]`, `dict[str, int]`).
+- `warn_return_any` — a function annotated to return a concrete type may not silently return `Any`.
+- `no_implicit_optional` — a parameter defaulting to `None` must be typed `Optional[T]` explicitly, not inferred.
+- `check_untyped_defs` — the bodies of unannotated functions are still type-checked, not skipped.
+
+Treat each one as load-bearing. None of them is a luxury.
+
+## When you may be tempted to skip typing
+
+- **"I will annotate it later."** Later does not come. Unannotated code has to be retroactively verified line by line. Type from the first draft.
+- **"The third-party library has no stubs."** Install its `types-*` package, add a stub from typeshed, or write a thin typed wrapper at the boundary. Not a project-wide `ignore_missing_imports`.
+- **"It is just glue code."** Glue code is where the shapes disagree and the `KeyError` hides. That is exactly where annotations pay off.
+- **"CI is failing and the release is due."** The type error is real. Add `# type: ignore[error-code]` with a TODO and a ticket number — never a bare ignore, never a config flag flip. The TODO is the ratchet that brings strictness back.
+
+## What to do when the checker catches something
+
+- **`Any` flagged on a value of unknown shape.** `Any` is the hole in the type system — it disables checking on everything it touches. Prefer `object` and narrow with `isinstance`, a `typing.Protocol` for structural typing, or a `TypedDict`/dataclass for a shaped dict. `object` is the strict cousin of `Any`: flexible for the producer, safe for the consumer.
+- **`None` possible.** Narrow explicitly (`if x is not None:`, an early return, pattern matching). Returning a silent default is rarely correct.
+- **A generic passed through as `Any`.** Introduce a `TypeVar` so the type flows in and out instead of being erased.
+- **An untyped third-party call.** Add its stubs or wrap it; use `typing.reveal_type` to confirm the inferred type before you trust it.
+
+## What you do not do
+
+- **`Any` to silence an error.** This is type erasure with a hat on. If you must coerce, `cast(T, value)` *after* a runtime `isinstance` check that proves the shape.
+- **Bare `# type: ignore`.** Use `# type: ignore[error-code]` with a reason comment. It stays scoped to the one error and fails loudly if a different one appears.
+- **`# type: ignore` on a whole file, or `# mypy: ignore-errors`.** No file is too big to type one expression at a time.
+- **Relaxing strict flags for a package in `pyproject.toml`/`mypy.ini`.** The most common "temporary" loosening and the hardest to reverse — every value in that module silently degrades to `Any`.
+- **`cast()` without a runtime check.** A cast is an assertion the checker trusts blindly; if it is wrong, the bug survives to production. Narrow, then cast.
