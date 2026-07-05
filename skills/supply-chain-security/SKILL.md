@@ -1,0 +1,44 @@
+---
+name: supply-chain-security
+description: Dependency and supply-chain threat discipline — pin and lock, audit for advisories, vet a new dependency before adding it, and treat install scripts and typosquats as attack surface. Invoke before adding or upgrading a dependency, or when hardening a project's build against a compromised package. Complements the security-review skill, which covers your own code's threat model.
+---
+
+# Supply-chain security
+
+Most of the code that ships in your application is not code you wrote. A modern dependency tree is hundreds of packages from hundreds of maintainers, any one of which — or any one of their accounts — can push code that runs on your developers' machines and in your production process. The attacks are real and routine: a maintainer account is phished and a malicious version is published, a typosquatted name catches a fat-fingered install, a `postinstall` script exfiltrates environment variables during CI. This discipline is about treating every dependency as untrusted input, because that is exactly what it is. It complements `security-review` — that skill hardens the code you write; this one hardens the code you pull in.
+
+## When to invoke
+
+- Adding a new dependency, or upgrading one across a major version.
+- Reacting to a security advisory or a `npm audit` / `pip-audit` / `cargo audit` finding.
+- Setting up or reviewing a project's build, lockfile, and CI dependency handling.
+- Any moment you are about to type `install <package>` for a name you have not vetted.
+
+## When NOT to invoke
+
+- A pure code change that adds no dependency and touches no build/install path.
+- Evaluating your own application's logic — that is `security-review`'s job.
+
+## Pin, lock, and audit
+
+- **Commit a lockfile and honor it.** `package-lock.json` / `pnpm-lock.yaml` / `poetry.lock` / `Cargo.lock` pins the exact resolved versions and their hashes. In CI install from the lockfile deterministically (`npm ci`, `pnpm install --frozen-lockfile`, `poetry install --sync`), never a fresh unpinned resolve that could pull a version you never reviewed.
+- **Avoid unpinned `latest` / `*` / `^` at the edges you care about.** A range means "run whatever the maintainer publishes next," including a compromised patch. The lockfile mitigates this, but a range plus a lockfile-less install path is how a bad version slips in.
+- **Audit on a schedule and on every change.** Run `npm audit` / `pip-audit` / `cargo audit` / `osv-scanner` in CI. Treat a high-severity advisory in a reachable dependency as a build failure, not a warning to scroll past. But confirm reachability before scrambling — an advisory in a dev-only or unused code path is lower priority than one in your request handler.
+
+## Vet a dependency before you add it
+
+Adding a dependency is adding attack surface and a maintenance obligation you now own. Before you install, ask:
+
+- **Do you actually need it?** A left-pad-sized package for a one-line function is pure risk with no payoff. Prefer the standard library or a few lines of your own.
+- **Is it maintained and real?** Recent commits, multiple maintainers, download counts consistent with its reputation, an issue tracker with responses. A package created last week with one maintainer and a name suspiciously close to a popular one is a typosquat until proven otherwise — check the name character by character.
+- **How big is the blast radius?** Look at the transitive tree, not just the direct package. One direct dependency can drag in fifty transitive ones, each its own trust decision.
+- **Does it run code at install time?** A `postinstall` / `preinstall` script (npm) or a `setup.py` that executes on install runs arbitrary code on every developer machine and CI runner before your app ever starts. Read it. Prefer packages without install scripts; where a build step is unavoidable, know exactly what it does.
+
+## Anti-patterns
+
+- **Adding a dependency for a one-liner.** The install is cheap; the ongoing trust and update burden is not.
+- **`--force` / `--legacy-peer-deps` past an audit failure** to make the red go away. The advisory is the tool doing its job.
+- **Unpinned `latest` in a Dockerfile or CI step**, so every build silently pulls a different, unreviewed version.
+- **Disabling install scripts blindly, or trusting them blindly.** Both are wrong — know what they do and decide.
+- **Ignoring the lockfile diff in review.** A PR that changes one line of code but rewrites the lockfile is quietly pulling in new maintainers' code. Read what moved.
+- **Treating a transitive dependency as someone else's problem.** It runs in your process with your privileges. It is your problem.
