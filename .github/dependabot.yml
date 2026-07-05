@@ -1,0 +1,31 @@
+# Dependabot keeps agentry's own toolchain current: the npm dev/runtime deps and
+# the GitHub Actions used by the sync-check workflow. Grouped, weekly, and
+# capped so the PR volume stays reviewable — agentry has a small dependency
+# surface, so this should be quiet.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      npm-dependencies:
+        patterns:
+          - "*"
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: ci
+      include: scope
+    groups:
+      github-actions:
+        patterns:
+          - "*"
