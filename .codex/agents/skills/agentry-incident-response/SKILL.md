@@ -1,0 +1,36 @@
+---
+name: agentry-incident-response
+description: Handle a production incident by stopping the bleeding first — mitigate before you diagnose, coordinate through one commander, communicate on a cadence, then run a blameless postmortem with owned action items. Invoke when a live system is degraded or down and users are affected. Skip for a routine bug with no active user impact.
+---
+
+# Incident response
+
+When production is broken and users are affected, the instinct of a good engineer — find the root cause — is the wrong first move. The first job is to stop the harm: restore service, even with a crude, temporary fix, *then* understand why it broke. An incident is not a debugging session; it is a triage. The clock is the enemy, the users are the priority, and the elegant root-cause fix can wait an hour. This discipline is how you keep an outage short and turn it into something the system learns from, instead of a heroic scramble no one can reconstruct afterward.
+
+## When to invoke
+
+- A live system is down or degraded and users are affected — errors spiking, latency blown, data not flowing, a security event unfolding.
+- A deploy or change has visibly made things worse and you need to decide fast whether to roll back.
+
+## When NOT to invoke
+
+- A routine bug with no active user impact — that is normal debugging (`error-debugging` / the `debugger` agent), not an incident.
+- A hypothetical or a drill — though rehearsing this on a drill is exactly how you make it work under real pressure.
+
+## The discipline
+
+- **Mitigate before you diagnose.** The first question is not "why?" but "how do we make it stop right now?" Roll back the recent deploy, flip the kill-switch flag off, fail over to a healthy replica, shed load, disable the broken feature. A mitigation that restores service without explaining the cause is a *win* — it converts an outage into a normal-hours investigation.
+- **One incident commander.** Someone owns the response: they hold the current picture, decide the next action, and delegate. Without a single coordinator, five people debug five theories in parallel, step on each other, and no one is deciding. The commander need not be the most senior — they run the response, not the keyboard.
+- **Communicate on a cadence.** Post status at a regular interval (even "still investigating, next update in 15 min") to a known channel — stakeholders, support, and users as appropriate. Silence during an outage breeds a second crisis of trust. Say what you know, what you're doing, and when you'll say more.
+- **Preserve evidence before you fix.** Capture the logs, metrics, the bad deploy's diff, a failing example, the current state — *before* you roll back or restart and destroy it. The mitigation often erases exactly the data the postmortem needs.
+- **Separate mitigation from the durable fix.** Once service is restored, the incident's acute phase is over but the work is not. The rollback bought time; the real fix — and the guardrail that stops a recurrence — is deliberate follow-up work, not a rushed hot-patch at hour three.
+- **Blameless postmortem, with teeth.** Afterward, write it up: a factual timeline, the contributing causes (systemic, not "Alice pushed a bad commit" — the system let a bad commit reach prod), the impact, and concrete action items each with an *owner and a date*. Blame makes people hide the next incident; the goal is a system that fails less, not a culprit.
+
+## Anti-patterns
+
+- **Debugging in prod while users bleed.** Chasing root cause with the site down instead of rolling back first. Mitigate, then investigate.
+- **The silent hero fix.** One person quietly wrestling it alone, no commander, no comms — so no one can help and no one knows the state.
+- **Destroying the evidence** by restarting/rolling back without capturing logs and metrics first.
+- **Blame in the postmortem**, which teaches everyone to be less transparent next time.
+- **Action items with no owner or date** — a postmortem whose fixes never ship is theater; the same incident recurs.
+- **Treating the mitigation as the fix** and closing the incident with the underlying weakness still live.
