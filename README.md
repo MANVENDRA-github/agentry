@@ -63,6 +63,8 @@ agents/ skills/ commands/ rules/ hooks/ mcp/      ← source of truth (edit thes
 | Agent | `code-explorer` | Maps an unfamiliar codebase — entry points, the path an operation takes, and where responsibilities live, with file:line anchors. |
 | Agent | `test-reviewer` | Reviews existing tests for whether they actually protect behavior — real assertions over mock calls, edges and failure paths covered. |
 | Agent | `performance-optimizer` | Fixes a measured performance problem end to end — baseline, profile, one change, re-measure — with behavior held constant. |
+| Agent | `api-designer` | Designs an API contract before implementation — naming, error shapes, versioning, pagination, idempotency. Companion to the `api-design` skill. |
+| Agent | `data-modeler` | Designs and evolves a data model — entities, keys, indexing for the real queries, constraints, safe migration. Companion to the `data-modeling` skill. |
 | Skill | `tdd-workflow` | Test-first development with explicit red-green-refactor loops. |
 | Skill | `test-writing` | Adds tests to code that already exists, characterizing current behavior. |
 | Skill | `code-review` | Self-review discipline before handing a change to another reviewer. |
@@ -82,13 +84,13 @@ agents/ skills/ commands/ rules/ hooks/ mcp/      ← source of truth (edit thes
 | Skill | `data-modeling` | Design and evolve a data schema deliberately — entities, keys, indexing for the real queries, constraints, safe expand-and-contract change. |
 | Skill | `resilience` | Design for failure on purpose — timeouts, bounded retries with backoff, idempotency, circuit breakers, graceful degradation. |
 
-Eighteen slash commands wrap the most-used agents and skills: `/plan`, `/review`, `/debug`, `/commit`, `/handoff`, `/refactor`, `/document`, `/architect`, `/security-review`, `/build-fix`, `/verify`, `/e2e`, `/upgrade-deps`, `/migrate`, `/release-notes`, `/explore`, `/review-tests`, `/optimize`. They sync to Claude Code and OpenCode — the two harnesses with a user-extensible command primitive — while Cursor and Codex receive the underlying agents and skills only. All four harnesses get the agents and skills behind these commands.
+Twenty slash commands wrap the most-used agents and skills: `/plan`, `/review`, `/debug`, `/commit`, `/handoff`, `/refactor`, `/document`, `/architect`, `/security-review`, `/build-fix`, `/verify`, `/e2e`, `/upgrade-deps`, `/migrate`, `/release-notes`, `/explore`, `/review-tests`, `/optimize`, `/design-api`, `/model-data`. They sync to Claude Code and OpenCode — the two harnesses with a user-extensible command primitive — while Cursor and Codex receive the underlying agents and skills only. All four harnesses get the agents and skills behind these commands.
 
-One rule ships as a pattern proof for language-specific content: `rules/typescript/strict-mode.md`. Claude Code receives it verbatim; Cursor receives it as a `.mdc` rule auto-attached to `.ts`/`.tsx` files (via globs derived from its `language` field); Codex receives it as a skill. (OpenCode's rules model — `AGENTS.md` and the `instructions` config — is a separate mapping, deferred.)
+Language rules ship as auto-attaching, per-language guidance — thirteen across ten languages so far (`typescript`, `python`, `go`, `rust`, `java`, `csharp`, `cpp`, `kotlin`, `sql`, `bash`), covering strictness, null/resource safety, error handling, and injection safety. Claude Code receives each verbatim; Cursor receives it as a `.mdc` rule auto-attached to the language's files (via globs derived from its `language` field); Codex receives it as a skill. (OpenCode's rules model — `AGENTS.md` and the `instructions` config — is a separate mapping, deferred.)
 
-One hook ships as a pattern proof for the hooks pipeline: `hooks/protect-generated-dirs.js` — a Claude Code `PreToolUse` hook that blocks edits to the generated `.claude/`, `.cursor/`, `.codex/`, and `.opencode/` directories and points you back at the source file. Hooks sync to Claude Code only; reference it from `settings.json` to enable it.
+Hooks ship as Claude Code `PreToolUse` guards you wire in from `settings.json` — five so far: `protect-generated-dirs` (block edits to the generated harness directories), `block-no-verify` (refuse `--no-verify` / signing bypass), `secret-scan-on-edit` (block writing a secret to source), `block-force-push` (protect shared branches), and `guard-dangerous-bash` (a catastrophic-command safety net). Hooks sync to Claude Code only.
 
-One MCP server ships as a pattern proof: `mcp/filesystem.json`. Author a Model Context Protocol server once as a harness-neutral JSON definition (the filename is the server name) and sync merges it into `.mcp.json` for Claude Code, `.cursor/mcp.json` for Cursor, and `opencode.json` for OpenCode — the first two read the same `mcpServers` map, while OpenCode's differently-shaped config is translated for it. Codex is deferred; it stores servers as TOML in a shared config file.
+MCP servers ship as harness-neutral JSON definitions (the filename is the server name) — `filesystem` and `git` so far. Sync merges each into `.mcp.json` for Claude Code, `.cursor/mcp.json` for Cursor, and `opencode.json` for OpenCode — the first two read the same `mcpServers` map, while OpenCode's differently-shaped config is translated for it. Codex is deferred; it stores servers as TOML in a shared config file.
 
 ## Setup
 
@@ -166,7 +168,7 @@ CI (`.github/workflows/sync-check.yml`) runs three jobs on every push and pull r
 
 ## Status and limitations
 
-v0.11.0. Four harness adapters, fifteen agents, eighteen skills, eighteen commands, one rule, one hook, and one MCP server. A few things are deliberately limited today, and the code says so plainly:
+v0.14.0. Four harness adapters, seventeen agents, twenty-six skills, twenty commands, thirteen language rules, five hooks, and two MCP servers. A `release` workflow cuts a GitHub Release from a `v*` tag and the matching CHANGELOG section (D21). A few things are deliberately limited today, and the code says so plainly:
 
 - Commands sync to Claude Code and OpenCode, the two harnesses with a user-extensible command primitive. Cursor and Codex receive the agents and skills behind those commands, but not the commands themselves.
 - Hooks sync to Claude Code only. Cursor, Codex, and OpenCode have no drop-in hooks directory; their event models differ and need a dedicated mapping.
