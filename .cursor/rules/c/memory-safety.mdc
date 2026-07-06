@@ -2,6 +2,7 @@
 name: memory-safety
 description: "C manual memory and string safety, since C has no bounds checking, ownership, or RAII: check every malloc/realloc/calloc return before use, pair each allocation with exactly one free (no leak, double-free, or use-after-free; NULL the pointer after freeing), use bounded string/format calls (snprintf/strncpy/strlcpy) and never strcpy/sprintf/strcat/gets, and validate arithmetic before allocating so size_t wraparound can't produce a tiny buffer followed by a large write. Applies when writing or editing .c/.h files."
 language: c
+globs: **/*.c
 alwaysApply: false
 ---
 

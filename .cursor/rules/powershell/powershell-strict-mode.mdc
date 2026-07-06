@@ -2,6 +2,7 @@
 name: powershell-strict-mode
 description: "PowerShell script safety for .ps1 files: `Set-StrictMode -Version Latest` and `$ErrorActionPreference = 'Stop'` so an undefined variable or a failed cmdlet halts instead of continuing, an explicit `$LASTEXITCODE`/`$?` check after every native-command call, and quoting paths that contain spaces. Invoke when writing or editing a PowerShell (.ps1) script."
 language: powershell
+globs: **/*.ps1,**/*.psm1,**/*.psd1
 alwaysApply: false
 ---
 
