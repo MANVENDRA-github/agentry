@@ -2,6 +2,7 @@
 name: config-safety
 description: "YAML gotchas when authoring or editing `.yml`/`.yaml` files: quote ambiguous scalars to defeat the Norway problem (`no`/`off`/`yes` parse as booleans, `1.20` truncates to a float, leading-zero values become octal or strings), indent with spaces and never tabs, reject duplicate keys, and keep anchors/aliases minimal. Invoke whenever writing or modifying a YAML config, CI, or manifest file, where a value that reads correctly can parse wrong with no error."
 language: yaml
+globs: **/*.yml,**/*.yaml
 alwaysApply: false
 ---
 

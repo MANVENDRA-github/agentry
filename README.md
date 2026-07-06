@@ -65,6 +65,9 @@ agents/ skills/ commands/ rules/ hooks/ mcp/      ← source of truth (edit thes
 | Agent | `performance-optimizer` | Fixes a measured performance problem end to end — baseline, profile, one change, re-measure — with behavior held constant. |
 | Agent | `api-designer` | Designs an API contract before implementation — naming, error shapes, versioning, pagination, idempotency. Companion to the `api-design` skill. |
 | Agent | `data-modeler` | Designs and evolves a data model — entities, keys, indexing for the real queries, constraints, safe migration. Companion to the `data-modeling` skill. |
+| Agent | `test-author` | Authors a characterization test suite for untested code — enumerates branches and error paths, pins current behavior to make a later change safe. |
+| Agent | `accessibility-reviewer` | Reviews UI for accessibility — semantic HTML, keyboard operability, contrast, accessible names, ARIA only as a last resort. |
+| Agent | `infra-config-reviewer` | Reviews infrastructure-as-code and deploy config for misconfiguration — over-broad permissions, public exposure, root containers, unpinned images, plaintext secrets. |
 | Skill | `tdd-workflow` | Test-first development with explicit red-green-refactor loops. |
 | Skill | `test-writing` | Adds tests to code that already exists, characterizing current behavior. |
 | Skill | `code-review` | Self-review discipline before handing a change to another reviewer. |
@@ -83,12 +86,18 @@ agents/ skills/ commands/ rules/ hooks/ mcp/      ← source of truth (edit thes
 | Skill | `mcp-authoring` | Build a Model Context Protocol server a model can actually use — clear tool descriptions, tight schemas, structured errors, no hardcoded secrets. |
 | Skill | `data-modeling` | Design and evolve a data schema deliberately — entities, keys, indexing for the real queries, constraints, safe expand-and-contract change. |
 | Skill | `resilience` | Design for failure on purpose — timeouts, bounded retries with backoff, idempotency, circuit breakers, graceful degradation. |
+| Skill | `datetime-handling` | Dates, times, and timezones done right — UTC at rest, timezone-aware values, monotonic elapsed time, deliberate DST and leap handling. |
+| Skill | `ci-pipeline-authoring` | A CI pipeline that gives fast, trustworthy signal — ordered stages, dependency caching, fail-fast, required checks that actually gate a merge. |
+| Skill | `secrets-management` | A secret across its whole lifecycle — out of source and image layers, injected at runtime, least privilege, rotated on schedule and after exposure. |
+| Skill | `rate-limiting` | Protect a service from overload and abuse — the right algorithm, keyed by identity, a correct `429`/`Retry-After` contract. Server-side counterpart to `resilience`. |
+| Skill | `database-transactions` | Transactions done right — an atomic unit of work, the isolation level that blocks the anomaly you face, short spans, retry on deadlock. |
+| Skill | `background-jobs` | Queued and async work for at-least-once delivery — idempotent jobs, bounded retries with a dead-letter, small checkpointed units. |
 
-Twenty slash commands wrap the most-used agents and skills: `/plan`, `/review`, `/debug`, `/commit`, `/handoff`, `/refactor`, `/document`, `/architect`, `/security-review`, `/build-fix`, `/verify`, `/e2e`, `/upgrade-deps`, `/migrate`, `/release-notes`, `/explore`, `/review-tests`, `/optimize`, `/design-api`, `/model-data`. They sync to Claude Code and OpenCode — the two harnesses with a user-extensible command primitive — while Cursor and Codex receive the underlying agents and skills only. All four harnesses get the agents and skills behind these commands.
+Twenty-one slash commands wrap the most-used agents and skills: `/plan`, `/review`, `/debug`, `/commit`, `/handoff`, `/refactor`, `/document`, `/architect`, `/security-review`, `/build-fix`, `/verify`, `/e2e`, `/upgrade-deps`, `/migrate`, `/release-notes`, `/explore`, `/review-tests`, `/optimize`, `/design-api`, `/model-data`, `/describe-pr`. They sync to Claude Code and OpenCode — the two harnesses with a user-extensible command primitive — while Cursor and Codex receive the underlying agents and skills only. All four harnesses get the agents and skills behind these commands.
 
-Language rules ship as auto-attaching, per-language guidance — thirteen across ten languages so far (`typescript`, `python`, `go`, `rust`, `java`, `csharp`, `cpp`, `kotlin`, `sql`, `bash`), covering strictness, null/resource safety, error handling, and injection safety. Claude Code receives each verbatim; Cursor receives it as a `.mdc` rule auto-attached to the language's files (via globs derived from its `language` field); Codex receives it as a skill. (OpenCode's rules model — `AGENTS.md` and the `instructions` config — is a separate mapping, deferred.)
+Language rules ship as auto-attaching, per-file-type guidance — eighteen so far, spanning programming languages (`typescript`, `javascript`, `python`, `go`, `rust`, `java`, `csharp`, `cpp`, `c`, `kotlin`, `ruby`, `php`, `swift`, `sql`), shells (`bash`, `powershell`), and config formats (`yaml`, `terraform`), covering strictness, null/resource/memory safety, error handling, injection safety, and config footguns. Claude Code receives each verbatim; Cursor receives it as a `.mdc` rule auto-attached to the language's files (via globs derived from its `language` field); Codex receives it as a skill. (OpenCode's rules model — `AGENTS.md` and the `instructions` config — is a separate mapping, deferred.)
 
-Hooks ship as Claude Code `PreToolUse` guards you wire in from `settings.json` — five so far: `protect-generated-dirs` (block edits to the generated harness directories), `block-no-verify` (refuse `--no-verify` / signing bypass), `secret-scan-on-edit` (block writing a secret to source), `block-force-push` (protect shared branches), and `guard-dangerous-bash` (a catastrophic-command safety net). Hooks sync to Claude Code only.
+Hooks ship as Claude Code `PreToolUse` guards you wire in from `settings.json` — seven so far: `protect-generated-dirs` (block edits to the generated harness directories), `block-no-verify` (refuse `--no-verify` / signing bypass), `secret-scan-on-edit` (block writing a secret to source), `block-force-push` (protect shared branches), `guard-dangerous-bash` (a catastrophic-command safety net), `block-secret-file-stage` (block staging a `.env` or key file), and `protect-lockfile-edit` (guard hand-edits to a dependency lockfile). Hooks sync to Claude Code only.
 
 MCP servers ship as harness-neutral JSON definitions (the filename is the server name) — `filesystem` and `git` so far. Sync merges each into `.mcp.json` for Claude Code, `.cursor/mcp.json` for Cursor, and `opencode.json` for OpenCode — the first two read the same `mcpServers` map, while OpenCode's differently-shaped config is translated for it. Codex is deferred; it stores servers as TOML in a shared config file.
 
@@ -168,7 +177,7 @@ CI (`.github/workflows/sync-check.yml`) runs three jobs on every push and pull r
 
 ## Status and limitations
 
-v0.14.0. Four harness adapters, seventeen agents, twenty-six skills, twenty commands, thirteen language rules, five hooks, and two MCP servers. A `release` workflow cuts a GitHub Release from a `v*` tag and the matching CHANGELOG section (D21). A few things are deliberately limited today, and the code says so plainly:
+v0.15.0. Four harness adapters, twenty agents, thirty-two skills, twenty-one commands, eighteen rules, seven hooks, and two MCP servers. A `release` workflow cuts a GitHub Release from a `v*` tag and the matching CHANGELOG section (D21). A few things are deliberately limited today, and the code says so plainly:
 
 - Commands sync to Claude Code and OpenCode, the two harnesses with a user-extensible command primitive. Cursor and Codex receive the agents and skills behind those commands, but not the commands themselves.
 - Hooks sync to Claude Code only. Cursor, Codex, and OpenCode have no drop-in hooks directory; their event models differ and need a dedicated mapping.

@@ -2,6 +2,7 @@
 name: state-and-plan-safety
 description: "Terraform/HCL authoring safety: pin provider and module versions (an unpinned provider silently upgrades and can rewrite resources on the next run), keep secrets out of `.tf` literals and variables (they persist to state in cleartext for anyone with state access), always `plan` and review before `apply`, and guard destructive changes with `prevent_destroy` and no blind `-auto-approve`. Applies when writing or editing `.tf`/HCL files."
 language: terraform
+globs: **/*.tf,**/*.tfvars
 alwaysApply: false
 ---
 
