@@ -1,0 +1,39 @@
+---
+name: memory-safety
+description: "C manual memory and string safety, since C has no bounds checking, ownership, or RAII: check every malloc/realloc/calloc return before use, pair each allocation with exactly one free (no leak, double-free, or use-after-free; NULL the pointer after freeing), use bounded string/format calls (snprintf/strncpy/strlcpy) and never strcpy/sprintf/strcat/gets, and validate arithmetic before allocating so size_t wraparound can't produce a tiny buffer followed by a large write. Applies when writing or editing .c/.h files."
+language: c
+---
+
+# C memory safety
+
+C hands you the machine directly and takes nothing back: there is no bounds checking, no ownership in the type system, and no destructor to run your cleanup. Every guarantee other languages give you for free is here a habit you have to keep by hand. `strcpy` into a fixed buffer overflows the moment the source is one byte too long; an early return added between a `malloc` and its `free` leaks; a second `free` corrupts the heap allocator; and `size_t` arithmetic silently wraps, so `count * size` overflows into a tiny allocation that the next loop writes far past. These are not exotic — they are the canonical memory-corruption CVEs, and the discipline below is what keeps them out.
+
+## What the discipline enforces
+
+- **Check every allocation return before you touch it.** `malloc`/`calloc`/`realloc` return `NULL` on failure, and dereferencing that `NULL` is undefined behavior. `if (!p) { /* handle */ }` immediately after the call, every time — and never assign a `realloc` result back onto the original pointer (`p = realloc(p, n)`), because on failure you have leaked the old block; use a temporary and check it first.
+- **One allocation, exactly one free, and NULL the pointer after.** Every `malloc`/`calloc`/`realloc`/`strdup` has exactly one matching `free` on every path out of the function. After freeing, set the pointer to `NULL` — a second `free(NULL)` is a harmless no-op, but a second `free` of a live pointer corrupts the heap, and a read through a freed-but-not-nulled pointer is a use-after-free.
+- **Bounded string and format calls only.** `snprintf` over `sprintf`, `strncpy`/`strlcpy` over `strcpy`, `strncat`/`strlcat` over `strcat`, `fgets` over `gets`. Every copy into a fixed buffer states its size, and you check the return so a truncation is not mistaken for success. `strncpy` does not NUL-terminate on truncation — terminate it yourself.
+- **Validate size arithmetic before you allocate.** `count * size` in a `size_t` wraps silently; a wrapped-small allocation followed by a full-size write is the classic integer-overflow-to-heap-overflow. Use `calloc(count, size)` (it checks the multiplication for you) or verify the product cannot overflow before calling `malloc`.
+
+## When you may be tempted to cut a corner
+
+- **"This `malloc` can't fail, it's only 16 bytes."** Small allocations fail too — under memory pressure, resource limits, or a hostile `count` you did not bound. The check is one `if`; skipping it turns an allocation failure into an attacker-controlled NULL dereference.
+- **"`strcpy` is fine, the input is always short."** "Always" is a property of today's callers, not of the code. The day a longer string reaches it — a new caller, a config field, a network packet — the fixed buffer overflows and the return address is on that stack. Bound it now; the bounded call is the same line.
+- **"I'll free it at the end, one path is enough."** C functions grow error branches, and each early `return` between the `malloc` and the final `free` is a leak — or, if you moved the `free` up, a double-free on the path that already freed. Structure the cleanup once (a single `goto cleanup:` at the bottom is idiomatic C, not a smell) so every exit runs it exactly once.
+
+## What to do when you hit one
+
+- **An unchecked allocation.** Add the `NULL` check at the call site and decide the failure policy there — return an error code, `goto` a cleanup label, or `perror`+exit for a fatal one. For `realloc`, assign to a temporary, check it, then reassign — never overwrite the only pointer to the old block.
+- **A `strcpy`/`sprintf`/`strcat`/`gets`.** Replace it with the bounded form carrying the destination size, and check the return for truncation. After a `strncpy` that may have truncated, write the terminating `'\0'` yourself. Prefer `snprintf(buf, sizeof buf, ...)` so the size tracks the buffer.
+- **A tangle of `free` calls across branches.** Consolidate to a single cleanup section at the end reached by `goto`, free each resource once there, and initialize every pointer to `NULL` up front so freeing an un-acquired one is safe. NULL each pointer as you free it if the function continues past that point.
+- **A size computed from input.** Before allocating, check the arithmetic cannot overflow (`if (count > SIZE_MAX / size) return error;`), or use `calloc(count, size)` which performs that check internally. Never feed an unvalidated `count * size` to `malloc`.
+- **A suspected corruption or leak.** Build with `-fsanitize=address,undefined` and run under Valgrind; they pinpoint the use-after-free, double-free, overflow, or leak that a crash three functions later only hints at. Treat their findings as the bug, not noise.
+
+## What you do not do
+
+- **Dereference an allocation return before checking it for `NULL`** — or reassign a `realloc` result onto its own pointer without a temporary.
+- **`strcpy`, `sprintf`, `strcat`, or `gets`** — every one writes without a length bound. Use `snprintf`/`strncpy`/`strlcpy`/`strncat`/`fgets` and check the result.
+- **`free` a pointer twice, or read through it after `free`.** NULL it after freeing; one owner frees, and only once.
+- **Feed `count * size` to `malloc` without proving the multiplication can't wrap.** Use `calloc` or a checked bound.
+- **Leak on an error path.** Every early return past an allocation frees what it acquired — route them through one cleanup section rather than duplicating (and mismatching) the frees.
+- **Ignore an AddressSanitizer, UBSan, or Valgrind finding.** They are reporting exactly the corruption this rule exists to prevent.

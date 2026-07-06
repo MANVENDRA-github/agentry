@@ -1,0 +1,41 @@
+---
+name: state-and-plan-safety
+description: "Terraform/HCL authoring safety: pin provider and module versions (an unpinned provider silently upgrades and can rewrite resources on the next run), keep secrets out of `.tf` literals and variables (they persist to state in cleartext for anyone with state access), always `plan` and review before `apply`, and guard destructive changes with `prevent_destroy` and no blind `-auto-approve`. Applies when writing or editing `.tf`/HCL files."
+language: terraform
+globs: **/*.tf,**/*.tfvars
+alwaysApply: false
+---
+
+# Terraform state and plan safety
+
+Terraform's easy path is the dangerous one. Leave a provider version unpinned and the next `init` quietly upgrades it, and a changed default or resource schema rewrites infrastructure you never touched. Hardcode a password in a `.tf` or feed it through a plain variable and it is written verbatim into state — a JSON file, in cleartext, readable by everyone who can read the backend. Run `apply -auto-approve` and Terraform will destroy-and-recreate a production database because an immutable field changed, with no human ever seeing the plan that said so. None of these is a Terraform bug; each is the short way costing you an outage. The discipline is to pin what can drift, keep secrets out of the config that becomes state, and never let a change reach real infrastructure without a reviewed plan.
+
+## What the discipline enforces
+
+- **Pin providers and modules to explicit versions.** Every `required_providers` entry carries a version constraint (`version = "~> 5.40"`, ideally a `.terraform.lock.hcl` committed alongside it), and every `module` block a pinned `version` or a git `ref=<tag-or-sha>` — not a bare source or a floating branch. An unpinned provider is an upgrade you did not schedule; the lockfile is what makes `init` reproducible for the next person and for CI.
+- **No secrets in `.tf` literals or plain variables.** A password, token, or key never appears as a string in a `.tf` file, a committed `.tfvars`, or a `default` on a variable. Source it from a secrets manager data source (Vault, AWS Secrets Manager, SSM), mark the variable `sensitive = true`, and remember that even a sensitive value still lands in state in cleartext — so the state backend itself must be encrypted and access-controlled.
+- **Plan, review, then apply.** `terraform plan` (or a saved plan file: `plan -out=tfplan` then `apply tfplan`) is read by a human before anything mutates. The plan is the contract — a `~` update you expected is fine; a `-/+` replace on a stateful resource is a stop-and-think. Applying the exact plan you reviewed removes the window where the world changes between review and apply.
+- **Guard destructive changes.** A stateful or hard-to-recreate resource (a database, a bucket with data, a KMS key) carries `lifecycle { prevent_destroy = true }` so a stray replace fails loudly instead of deleting it. `-auto-approve` is reserved for CI running a pre-approved saved plan, never a habit at an interactive prompt.
+
+## When you may be tempted to cut a corner
+
+- **"Unpinned just means I get the latest fixes."** It also means you get the latest breaking change, on whichever `init` happens to run first — often a teammate's or CI's, not yours. You inherit an upgrade with no changelog read and no plan reviewed. Pin the version and bump it deliberately, with a plan in front of you.
+- **"I'll hardcode the secret for now and rotate it later."** The secret is in state and in git history the moment you apply and commit, and both are far harder to scrub than to avoid. "For now" is how a credential ends up in a state file a year later. Wire it through a secrets source the first time.
+- **"`-auto-approve` saves me the confirmation step."** It saves you the one moment designed to catch a replace you did not intend. The confirmation is not friction; it is the review of the plan. Skip it only when a machine already reviewed a saved plan you approved.
+- **"It's just a `tags` change, the plan is obviously safe."** Then reading it costs five seconds and confirms that. The plans that destroy things are the ones nobody expected to — an immutable attribute changed upstream, and the "safe" edit forces a replace. Read every plan; the boring ones are cheap.
+
+## What to do when you hit one
+
+- **A provider or module with no version.** Add a constraint in `required_providers` / the `module` block, run `init -upgrade` once deliberately, review the resulting plan, and commit `.terraform.lock.hcl`. From then on the version moves only when you move it.
+- **A secret in a `.tf` or `.tfvars`.** Remove the literal, source it from a secrets manager or a `sensitive` variable injected at apply time, and treat the exposed value as compromised — rotate it, and scrub it from state (`terraform state` / re-import) and git history, not just from the current file.
+- **A plan that shows a replace (`-/+`) on something stateful.** Stop. Confirm the resource can actually be recreated without data loss; if it holds data, add `prevent_destroy`, and use `create_before_destroy`, a state `move`, or an explicit migration rather than letting Terraform delete-then-create. Only proceed once you know what happens to the data.
+- **A destructive apply you need to run intentionally** (a real teardown). Do it with a reviewed saved plan and, if `prevent_destroy` is in the way, remove that guard in a separate, reviewed commit — so the deletion is a deliberate, auditable act, not a side effect of `-auto-approve`.
+
+## What you do not do
+
+- **Leave a provider or module unpinned** — no version constraint, a floating branch source, or an uncommitted lockfile that lets `init` drift.
+- **Put a secret in a `.tf` literal, a committed `.tfvars`, or a variable `default`** — or forget that a `sensitive` value still persists to state in cleartext.
+- **`apply -auto-approve` at an interactive prompt**, or apply anything without reading the plan it is based on.
+- **Apply a plan different from the one you reviewed** — save it with `-out` and apply that file when the change is consequential.
+- **Let a `-/+` replace on a stateful resource through** without knowing what happens to its data, or strip `prevent_destroy` in the same breath as the change it was guarding against.
+- **Commit state files** (`terraform.tfstate`) to git, or run against an unencrypted, world-readable backend — state is where the secrets and the whole topology live.

@@ -32,6 +32,10 @@ export const LANGUAGE_GLOBS = {
   cpp: "**/*.cpp,**/*.cc,**/*.hpp,**/*.h",
   sql: "**/*.sql",
   bash: "**/*.sh,**/*.bash,**/*.zsh",
+  powershell: "**/*.ps1,**/*.psm1,**/*.psd1",
+  c: "**/*.c",
+  yaml: "**/*.yml,**/*.yaml",
+  terraform: "**/*.tf,**/*.tfvars",
 };
 
 /**

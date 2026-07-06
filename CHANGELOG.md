@@ -4,6 +4,46 @@ All notable changes to agentry are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.15.0] — cross-cutting engineering skills, new language/format rules, and safety guards
+
+Adds six neutral engineering-discipline skills, five rules extending coverage to two config formats, a shell, and two more languages (including the maintainers' own PowerShell), three review/authoring agents, a `/describe-pr` command, and two guard hooks. Each addition was found by auditing the corpus for genuine gaps and vetted against the curation bar (D10) — dedup and real-problem checks against the existing catalog, with ten proposals cut as duplicates or speculative. Same bar as prior releases; no new dependencies (D11).
+
+### Added
+
+**Skills:**
+- `datetime-handling` — store and compute in UTC, keep values timezone-aware, measure elapsed time with a monotonic clock, reckon deliberately with DST and leap days.
+- `ci-pipeline-authoring` — ordered fast-to-slow stages, dependency caching keyed on the lockfile, parallel jobs, build-once-and-promote, required checks that actually gate a merge.
+- `secrets-management` — a secret across its whole lifecycle: out of source and image layers, injected at runtime, least privilege, rotated on schedule and after exposure.
+- `rate-limiting` — server-side self-protection: token-bucket/sliding-window over naive fixed windows, keyed by the right identity, a correct `429`/`Retry-After` contract. Counterpart to `resilience`.
+- `database-transactions` — an atomic unit of work, the isolation level that blocks the anomaly you face, short lock spans, retry on deadlock/serialization failure.
+- `background-jobs` — at-least-once async/queued work: idempotent jobs, bounded retries with a dead-letter, small checkpointed units, scheduling separated from execution.
+
+**Rules:**
+- `powershell/powershell-strict-mode` — `Set-StrictMode`, `$ErrorActionPreference = 'Stop'`, an explicit `$LASTEXITCODE`/`$?` check after every native command, quoted paths. Auto-attaches on `**/*.ps1`. The maintainers' own platform; only `bash` was covered.
+- `yaml/config-safety` — quote ambiguous scalars against the Norway problem, spaces not tabs, reject duplicate keys, minimal anchors. Auto-attaches on `**/*.yml`/`**/*.yaml`.
+- `javascript/vanilla-safety` — `===` over `==`, no floating promises, strict mode, validate `JSON.parse` output before reading it. Auto-attaches on `**/*.js` and friends.
+- `c/memory-safety` — checked allocation, bounds discipline, single clear ownership, no use-after-free or double-free. Auto-attaches on `**/*.c`.
+- `terraform/state-and-plan-safety` — plan before apply, treat state as the source of truth and never edit it by hand, guard destroys. Auto-attaches on `**/*.tf`.
+
+**Agents:**
+- `test-author` — authors a characterization test suite for untested code, pinning current behavior to make a later change safe.
+- `accessibility-reviewer` — reviews UI for accessibility: semantic HTML, keyboard operability, contrast, accessible names, ARIA as a last resort.
+- `infra-config-reviewer` — reviews infrastructure-as-code and deploy config for misconfiguration: over-broad permissions, public exposure, root containers, unpinned images, plaintext secrets.
+
+**Commands:**
+- `/describe-pr` — wraps the `pr-describer` agent to produce a reviewer-focused PR title and description.
+
+**Hooks:**
+- `block-secret-file-stage` — block staging a `.env` or key/credential file.
+- `protect-lockfile-edit` — guard hand-edits to a dependency lockfile.
+
+### Changed
+
+- `scripts/cursor-transform.js` `LANGUAGE_GLOBS` gains `powershell`, `c`, `yaml`, and `terraform` entries so the new rules auto-attach in Cursor like their peers.
+- README "What's inside", the rule/hook/command paragraphs, and "Status and limitations" updated: twenty agents, thirty-two skills, twenty-one commands, eighteen rules, seven hooks, two MCP servers.
+- Plugin manifest version bumped to `0.15.0`.
+- `rules/` grows from thirteen to eighteen; skills to thirty-two; agents to twenty; commands to twenty-one; hooks to seven.
+
 ## [0.14.0] — language coverage, platform skills, companion agents, and release automation
 
 Rounds out the glob-mapped languages that still lacked a rule, adds three neutral engineering-discipline skills, completes two D7 companion agent+skill pairs, and adds the one piece of release automation that fits a git-clone tool (D12): a tag-triggered GitHub Release built from the CHANGELOG. Also refreshes README counts that had drifted since v0.11.0. Same curation bar (D10); ECC remains a reference, not a target (D17).

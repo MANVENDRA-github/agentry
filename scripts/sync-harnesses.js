@@ -256,7 +256,7 @@ async function syncClaude() {
 
   const manifest = {
     name: "agentry",
-    version: "0.14.0",
+    version: "0.15.0",
     description:
       "Author your AI coding agents and skills once. Sync them to every harness you use.",
     author: "MANVENDRA-github",
