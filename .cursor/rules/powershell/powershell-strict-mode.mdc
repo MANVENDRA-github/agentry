@@ -1,0 +1,41 @@
+---
+name: powershell-strict-mode
+description: "PowerShell script safety for .ps1 files: `Set-StrictMode -Version Latest` and `$ErrorActionPreference = 'Stop'` so an undefined variable or a failed cmdlet halts instead of continuing, an explicit `$LASTEXITCODE`/`$?` check after every native-command call, and quoting paths that contain spaces. Invoke when writing or editing a PowerShell (.ps1) script."
+language: powershell
+alwaysApply: false
+---
+
+# PowerShell strict mode
+
+PowerShell's defaults are the opposite of fail-fast. A cmdlet that errors sets `$?` to `$false` and writes to the error stream, but with `$ErrorActionPreference` at its default `Continue` the script runs the next line anyway. An undefined variable expands to `$null` with no warning, so a typo'd `$sourcePath` silently becomes empty. And a native executable returning a non-zero exit code stops nothing at all — PowerShell only surfaces that in `$LASTEXITCODE`, which nothing checks unless you write the check. The result is a cleanup or deploy script that sails right past the step that already failed and acts on empty or half-built state — deleting the wrong directory because `$target` was `$null`, or publishing artifacts a failed build never produced. Strict mode and explicit exit-code checks turn those silent continuations into loud, early stops.
+
+## What the discipline enforces
+
+- **`Set-StrictMode -Version Latest` at the top of every script.** It turns referencing an undefined variable, calling a non-existent property, and calling a function with the wrong syntax into terminating errors instead of silent `$null`. A misspelled `$config` fails where it is written, not three steps later when the `$null` reaches a `Remove-Item`.
+- **`$ErrorActionPreference = 'Stop'` at the top.** By default a cmdlet error is non-terminating: the pipeline continues. Setting `Stop` makes any cmdlet error terminate the script so a failed `Copy-Item` or `New-Item` halts instead of letting the next line run on the failure's aftermath. For a single call that is genuinely allowed to fail, override locally with `-ErrorAction SilentlyContinue`/`Continue` and handle it — do not lower the whole script's preference.
+- **Check `$LASTEXITCODE` (or `$?`) after every native command.** `$ErrorActionPreference` does not govern external executables (`git`, `npm`, `robocopy`, `dotnet`) — a non-zero exit code is invisible unless you inspect it. After each native call, test it: `if ($LASTEXITCODE -ne 0) { throw "git failed ($LASTEXITCODE)" }`. `$?` reflects the last command's success for the boolean check; `$LASTEXITCODE` carries the actual code.
+- **Quote paths and quote them right.** Any path that can contain a space goes in quotes. Use single quotes for literals and double quotes only when you need interpolation (`"$dir\out"`) — an unquoted `C:\Program Files\app` is parsed as two arguments. Prefer `Join-Path $base $child` to hand-built path strings so separators and spaces are handled for you.
+
+## When you may be tempted to cut a corner
+
+- **"Strict mode complains about a variable I know is set."** Then it is set on one path and not another, or it is spelled differently in two places — which is exactly the bug. Initialize it before the branch, or reference the right name. The complaint is strict mode catching a `$null` you were about to act on.
+- **"The script mostly works without `-ErrorAction Stop`."** "Mostly" means it works until the copy fails on a locked file and the next line archives the incomplete result. A non-terminating error you did not handle is a wrong answer produced confidently. Set `Stop` and handle the exceptions you actually expect.
+- **"`git`/`npm` printed an error, that's enough."** The message scrolls past and the script keeps going with `$LASTEXITCODE` set to a value nothing read. A printed error is not a stopped script. Check the code and `throw`.
+- **"It's just a local helper script."** Local helpers become the deploy step and the scheduled task. The habit has to be uniform, because the run that matters is the unattended one where no one is watching the output.
+
+## What to do when you hit one
+
+- **A cmdlet whose failure is acceptable.** Scope the exception, don't lower the global bar: `Remove-Item $tmp -ErrorAction SilentlyContinue`, or wrap it in `try { ... } catch { ... }` and handle the case. Keep `$ErrorActionPreference = 'Stop'` for everything else.
+- **A native command whose exit code you must act on.** Capture and branch: `& dotnet build; if ($LASTEXITCODE -ne 0) { throw "build failed" }`. For a call whose non-zero is expected (a `grep`-style probe), read `$LASTEXITCODE` into a variable and branch on it deliberately instead of ignoring it.
+- **A variable that may legitimately be absent.** Give it an explicit default before use (`$Retries = if ($env:RETRIES) { [int]$env:RETRIES } else { 3 }`) rather than relying on `$null`, so strict mode has nothing to trip on and the intent is visible.
+- **A destructive path built from a variable.** Guard it before `Remove-Item`: verify it is non-empty and exists (`if (-not $target) { throw 'target unset' }`), quote it, and prefer `-LiteralPath` so a `[` or space in the value is not treated as a wildcard or split.
+- **An error you want to enrich.** Use `try { ... } catch { throw "deploying $Name`: $_" }` to add context and re-throw, rather than swallowing it — the terminating error should carry which step failed.
+
+## What you do not do
+
+- **Ship a `.ps1` without `Set-StrictMode -Version Latest` and `$ErrorActionPreference = 'Stop'`** (or an explicit, commented reason a call opts out locally).
+- **Leave a native command's exit code unchecked** — no `$LASTEXITCODE`/`$?` test after `git`, `npm`, `dotnet`, `robocopy`, or any external exe whose failure should stop the script.
+- **Lower `$ErrorActionPreference` to `Continue`/`SilentlyContinue` for the whole script** to dodge one noisy call. Scope the override to that call.
+- **Reference a variable you never initialized** and rely on it being `$null` — strict mode makes that a terminating error, and for good reason.
+- **Build a path by string concatenation and leave it unquoted** where a space splits it into two arguments. Quote it, or use `Join-Path`.
+- **`Remove-Item`/`Remove-Item -Recurse` on an unguarded variable path.** Check it non-empty and existing, quote it, and use `-LiteralPath` so an empty or wildcard value never reaches it.

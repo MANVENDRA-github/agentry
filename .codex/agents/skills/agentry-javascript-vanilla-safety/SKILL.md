@@ -1,0 +1,38 @@
+---
+name: agentry-javascript-vanilla-safety
+description: Runtime safety for plain (non-TypeScript) JavaScript, where no compiler backstops you: use `===`/`!==` never `==`, never leave a Promise rejection unhandled (no floating async — await or `.catch`), enable strict mode via ES modules or `'use strict'`, and validate `JSON.parse` output and any external data shape before reading its fields. Applies when writing or editing `.js`/`.mjs`/`.cjs` files that are not TypeScript.
+---
+
+# Vanilla JavaScript safety
+
+Vanilla JavaScript offers zero static help: there is no compiler to tell you a comparison juggles types, a promise was never awaited, or a field you read does not exist. `==` coerces with rules almost no one remembers (`0 == ''` and `'' == false` are both true); an unawaited promise rejection can crash the process on modern Node or vanish without a trace; and reading a missing property yields `undefined` that explodes three calls later as `Cannot read properties of undefined`. This is precisely the class of bug a type checker catches — in a file that has none. The discipline is to supply by hand the guarantees the language will not: compare strictly, handle every rejection, run in strict mode, and validate any data you did not construct yourself.
+
+## What the discipline enforces
+
+- **`===`/`!==`, never `==`/`!=`.** Strict equality compares without coercion, so the result depends on the values, not on a coercion table. Loose `==` gives you `0 == ''`, `'' == false`, `null == undefined`, and `'0e0' == 0` all true — surprises that turn a guard into a hole. The one deliberate exception is `x == null` to catch both `null` and `undefined` in a single check; write it knowingly, not by habit.
+- **No floating promises.** Every promise is `await`ed, `return`ed, or terminated with `.catch(handler)`. A promise created and dropped runs detached: if it rejects, the failure is an `unhandledRejection` that logs nothing useful and, under Node's default, tears down the process. `void somePromise` is not handling it — it is silencing the linter while keeping the bug.
+- **Strict mode on, always.** ES modules (`.mjs`, or `"type": "module"`) are strict automatically; a classic script or `.cjs` needs `'use strict';` at the top. Strict mode turns silent failures loud — assigning an undeclared variable throws instead of leaking a global, writing a read-only property throws, and `this` in a plain function call is `undefined` instead of the global object.
+- **Validate external data before reading its fields.** `JSON.parse` returns `any` in spirit and `undefined`-yielding objects in practice. A network response, a config file, a message payload, `process.env`, and CLI args are all untyped input. Check the shape — the type of the value and the presence of the keys you read — at the boundary, and convert it into something the rest of the code can trust, before you index into it.
+
+## When you may be tempted to cut a corner
+
+- **"`==` is fine here, both sides are strings."** Until one side arrives as a number from `JSON.parse` or a form field, and the coercion you did not think about changes the answer. `===` costs one character and removes the question entirely.
+- **"It's a fire-and-forget log / metric, I don't need to await it."** Fire-and-forget still rejects, and an unhandled rejection is not free — it pollutes your logs at best and crashes the worker at worst. Attach a `.catch(() => {})` that *deliberately* swallows it, so the intent is on the page instead of implied by omission.
+- **"`JSON.parse` always gives me the shape I expect."** It gives you whatever was in the string. A truncated response, an error body where you expected data, or a renamed field all parse fine and hand you an object that is wrong in exactly the way that surfaces far from here. Validate once at the seam; the alternative is debugging `undefined` three frames downstream.
+- **"Strict mode is on somewhere already."** Maybe — but a classic script or a `.cjs` file without `'use strict';` is not strict, and the failure it hides (a typo'd assignment silently creating a global) is invisible until something else reads the wrong value. Put the pragma in, or use an ES module.
+
+## What to do when you hit one
+
+- **A `==`/`!=` in existing code.** Change it to `===`/`!==` and check whether the coercion was load-bearing. If it was genuinely catching `null` *and* `undefined`, keep the intent explicit with `x == null` (or `x === null || x === undefined`), not a blanket loose compare.
+- **A promise with no consumer.** Decide what it is: something you need the result of (`await` it, in an `async` function), something whose failure matters but whose timing does not (`.catch(err => log(err))`), or something you truly want to drop (`.catch(() => {})` with a comment saying why the rejection is safe to ignore).
+- **A value from `JSON.parse` or any external source.** Guard it before use: check `typeof parsed === 'object' && parsed !== null`, verify the keys you read exist and have the expected type, and fail with a clear error (or a defined default) when they do not. A schema validator (Zod, Ajv, a hand-written guard) at the boundary turns "trust and explode later" into "reject at the door."
+- **A file that isn't strict.** Add `'use strict';` as the first statement of the classic script or `.cjs`, or convert it to an ES module. Then fix what strict mode surfaces — an accidental global, a write to a frozen object — rather than reverting to loose mode.
+
+## What you do not do
+
+- **`==`/`!=` for anything that matters** — comparisons that gate control flow, auth, or values from untyped input. Use `===`/`!==`; reserve `== null` as a conscious, commented idiom.
+- **Leave a promise floating.** No created-and-dropped async call, no `void promise` to quiet the linter. Await it, return it, or `.catch` it.
+- **Read fields off `JSON.parse` output or a network/config/env value** without checking its shape first. Untyped input is hostile until validated.
+- **Ship a classic script or `.cjs` without `'use strict';`**, or rely on strict mode being inherited from a context this file does not actually run in.
+- **Swallow a rejection silently.** An empty `.catch()` with no comment is the async twin of an ignored error code — if dropping it is correct, say so; otherwise handle it.
+- **Reach for `parseInt`/implicit coercion on untrusted input** and assume a number came out — `Number()` of a bad value is `NaN`, which then poisons every comparison (`NaN === NaN` is false). Validate, then convert.
