@@ -28,6 +28,13 @@ param(
   [switch]$Help
 )
 
+# Fail fast, per rules/powershell/powershell-strict-mode.md. StrictMode turns a
+# misspelled variable and a non-existent property into terminating errors instead
+# of a silent $null; ErrorActionPreference makes a cmdlet failure stop the script
+# rather than letting the next line run on the failure's aftermath. Both matter
+# here: this script resolves destination paths from variables and then removes
+# and copies directories under them.
+Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 function Write-Err($msg) { [Console]::Error.WriteLine($msg) }
