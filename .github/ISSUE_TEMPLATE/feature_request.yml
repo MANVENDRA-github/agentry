@@ -1,0 +1,77 @@
+name: Proposal
+description: Propose a new agent, skill, command, rule, hook, MCP server, or harness adapter.
+labels: ['enhancement']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        agentry is deliberately small. Every addition is measured against one bar: **five excellent skills beats fifty mediocre ones.**
+
+        Read `CONTRIBUTING.md` first. Speculative content is rejected on sight — "might be useful" is not a rationale. So is anything language- or framework-specific in the core repo.
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What are you proposing
+      options:
+        - Agent
+        - Skill
+        - Command
+        - Rule
+        - Hook
+        - MCP server
+        - Harness adapter
+        - Change to the sync engine
+        - Something else
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The concrete problem you hit
+      description: Not a category of problem. The specific one, the last time it happened to you. If you cannot name a real occurrence, this proposal will be rejected.
+      placeholder: |
+        I keep re-deriving the same Postgres migration checklist across three repos, and last week I dropped a NOT NULL constraint on a live table because nothing prompted me to check for existing nulls first.
+    validations:
+      required: true
+
+  - type: textarea
+    id: why-not-existing
+    attributes:
+      label: Why no existing component covers it
+      description: Browse `agents/`, `skills/`, `commands/`, `rules/`, and `hooks/`. Name the closest existing component and say why it does not fit.
+      placeholder: |
+        The closest is the `data-modeling` skill, but it covers designing a schema, not the mechanics of shipping a change to a live one.
+    validations:
+      required: true
+
+  - type: input
+    id: trigger
+    attributes:
+      label: Proposed description field
+      description: Every component's `description` must name when to invoke it. Write it now — a vague description causes vague invocations, and this is the field reviewers scrutinise hardest.
+      placeholder: 'Invoke when altering a table that already holds production rows. Skip for greenfield schemas.'
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: bar
+    attributes:
+      label: Against the bar
+      options:
+        - label: This is language- and framework-neutral, or it is a language rule under `rules/<language>/`.
+          required: true
+        - label: I have read 2–3 existing components in the same directory and this one matches their format and depth.
+          required: true
+        - label: I understand a proposal with no real-world occurrence behind it will be closed.
+          required: true
+
+  - type: textarea
+    id: sketch
+    attributes:
+      label: Rough sketch
+      description: Optional. The frontmatter and a few body lines, if you have them.
+      render: markdown
+    validations:
+      required: false
