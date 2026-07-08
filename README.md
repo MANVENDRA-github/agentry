@@ -325,7 +325,7 @@ The dependency count is not an accident. A tool that writes config into your `~/
 
 ## Status and limitations
 
-v0.15.0. Four harness adapters. A few things are deliberately limited today, and the code says so plainly:
+v0.16.0. Four harness adapters. A few things are deliberately limited today, and the code says so plainly:
 
 - Commands sync to Claude Code and OpenCode, the two harnesses with a user-extensible command primitive. Cursor and Codex receive the agents and skills behind those commands, but not the commands themselves.
 - Hooks sync to Claude Code only. Cursor, Codex, and OpenCode have no drop-in hooks directory; their event models differ and need a dedicated mapping.
