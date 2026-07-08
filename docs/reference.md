@@ -12,7 +12,7 @@ For the why behind the shape, see [`decisions.md`](./decisions.md). For high-lev
 | `skills/<name>/SKILL.md` | source | Authored skills (frontmatter + body, may bundle siblings). Edit here. |
 | `commands/<name>.md` | source | Authored slash commands. Edit here. |
 | `rules/<category>/<name>.md` | source | Authored rules, namespaced by category (language identifier or topic). Edit here. |
-| `hooks/<name>.{sh,js}` | source | Authored harness hooks (scripts). Edit here. |
+| `hooks/<name>.js` | source | Authored harness hooks (Node scripts, seven of them). Edit here. See [Hook reference](#hook-reference). |
 | `mcp/<name>.json` | source | Authored MCP server definitions, one per file; filename is the server name. Edit here. |
 | `scripts/sync-harnesses.js` | tool | Sync engine. Generates `.claude/`, `.cursor/`, `.codex/`, `.opencode/`, and the MCP config files from sources. |
 | `scripts/frontmatter.js` | tool | Shared YAML-ish frontmatter parser and validation helpers. |
@@ -29,22 +29,30 @@ For the why behind the shape, see [`decisions.md`](./decisions.md). For high-lev
 | `docs/authoring.md` | doc | How to author new agents, skills, rules. |
 | `docs/decisions.md` | doc | Numbered design decisions with rationale. |
 | `docs/reference.md` | doc | This document. |
-| `.claude/` | generated | Claude Code adapter output. **Do not edit.** Wiped on sync. |
-| `.cursor/` | generated | Cursor adapter output. **Do not edit.** Wiped on sync. |
-| `.codex/` | generated | Codex adapter output. **Do not edit.** Wiped on sync. |
-| `.opencode/` | generated | OpenCode adapter output. **Do not edit.** Wiped on sync. |
-| `.claude-plugin/plugin.json` | generated | Claude Code plugin manifest. Written by `syncClaude`. |
-| `.mcp.json` | generated | Merged MCP server map for Claude Code (project scope, repo root). Written by `syncClaude` when `mcp/` sources exist. **Do not edit.** |
-| `.cursor/mcp.json` | generated | Merged MCP server map for Cursor. Written by `syncCursor`. **Do not edit.** |
-| `opencode.json` | generated | MCP config for OpenCode (repo root, `mcp` key, translated shape). Written by `syncOpenCode`. **Do not edit.** |
+| `.claude/{agents,skills,commands,rules,hooks}/` | generated | Claude Code adapter output. **Do not edit.** Wiped on sync. |
+| `.cursor/{agents,rules}/` | generated | Cursor adapter output. **Do not edit.** Wiped on sync. |
+| `.codex/agents/skills/` | generated | Codex adapter output. **Do not edit.** Wiped on sync. |
+| `.opencode/{agents,skills,commands}/` | generated | OpenCode adapter output. **Do not edit.** Wiped on sync. |
+| `.claude-plugin/plugin.json` | generated | Claude Code plugin manifest. Written by `syncClaude`; every field read from `package.json`. **Do not edit.** |
+| `.mcp.json` | written | Merged MCP server map for Claude Code (project scope, repo root). Written by `syncClaude` when `mcp/` sources exist, **never deleted** — may carry your own servers (D20). |
+| `.cursor/mcp.json` | written | Merged MCP server map for Cursor. Written by `syncCursor` when `mcp/` sources exist, **never deleted** — may carry your own servers (D20). |
+| `opencode.json` | written | MCP config for OpenCode (repo root, `mcp` key, translated shape). Written by `syncOpenCode` when `mcp/` sources exist, **never deleted** — may carry your own OpenCode config (D20). |
+| `.claude/settings.local.json`, `.cursor/environment.json`, `.codex/config.toml` | user state | Per-user harness state at the top of a harness directory. Sync never touches it: an adapter wipes only the subdirectories it generates, never the parent. |
 | `.gitattributes` | config | Forces LF line endings (`* text=auto eol=lf`) so sync output is byte-identical across platforms. |
-| `.github/workflows/sync-check.yml` | ci | Three-job CI workflow (sync determinism, lint, tests). |
+| `.github/workflows/sync-check.yml` | ci | Three-job CI workflow (sync determinism, lint, tests). Scoped to `contents: read`. |
+| `.github/workflows/release.yml` | ci | On a `v*` tag push, gates on the same three checks and cuts a GitHub Release from the matching CHANGELOG section (D21). Needs `contents: write`. |
+| `.github/dependabot.yml` | ci | Weekly grouped updates for the npm manifest and the GitHub Actions used by the workflows. |
+| `.github/PULL_REQUEST_TEMPLATE.md` | doc | Surfaces CONTRIBUTING's three hard PR requirements at the moment a PR is opened. |
+| `.github/ISSUE_TEMPLATE/` | doc | `bug_report.yml`, `feature_request.yml` (a proposal form), and `config.yml`, which disables blank issues and routes security reports to a private advisory. |
 | `.gitignore` | config | Tracks generated harness dirs; ignores Claude Code per-user state. |
-| `package.json` | config | npm scripts, Node engine requirement, project metadata. |
+| `package.json` | config | npm scripts, Node engine requirement, and the single source of the project metadata `syncClaude` writes into the plugin manifest. Marked `private` — agentry installs by clone, never from a registry. |
 | `README.md` | doc | Project overview and install. End-user entry point. |
 | `CONTRIBUTING.md` | doc | Contributor workflow and rejection criteria. |
 | `CLAUDE.md` | doc | AI assistant operating guidance for this repo. |
 | `CHANGELOG.md` | doc | Per-version changes. |
+| `LICENSE` | legal | MIT. |
+| `SECURITY.md` | doc | Threat model for a config generator, and the private advisory flow for reporting a vulnerability. |
+| `CODE_OF_CONDUCT.md` | doc | Contributor Covenant 2.1. |
 
 ## Source-of-truth content types
 
@@ -166,6 +174,26 @@ The `npm run doctor` script. Reports the health of sources, generated dirs, fron
   - User install at `~/.claude/` — lists installed agents and skills, flags missing ones. (Does not check Cursor, Codex, or OpenCode installs.)
 - **Exit:** 0 if every required check passes, 1 on failure.
 
+## Hook reference
+
+Seven Node scripts under `hooks/`, copied verbatim into `.claude/hooks/` by `syncClaude`. They sync to Claude Code only; no other harness has a drop-in hooks directory.
+
+**Nothing enables them.** Sync copies the files; you wire each one into `settings.json` yourself as a `PreToolUse` hook with the appropriate `matcher`. Read a hook before you turn it on — each carries its own wiring snippet in its header comment.
+
+**The contract is a process contract**, not a function signature: Claude Code passes the tool call as JSON on stdin; the hook exits `0` to allow and `2` to block, writing the reason to stderr, which Claude sees. Every hook **fails open** — an empty, malformed, or unexpected payload exits `0`. A hook that throws returns non-zero and would block every tool call in the session.
+
+None of them inspects `tool_name`; the `matcher` in `settings.json` is what routes the right calls to them.
+
+| Hook | `matcher` | Blocks |
+|---|---|---|
+| `protect-generated-dirs` | `Write\|Edit\|MultiEdit` | A write into a generated subdirectory. Names the source file to edit instead. Deliberately allows the per-user state and MCP config files listed in the inventory above. |
+| `secret-scan-on-edit` | `Write\|Edit` | Content carrying a credential (AWS key id, GitHub PAT, private-key header). Reads an Edit's `new_string` as well as a Write's `content`. Allows a `process.env` reference and a placeholder in `.env.example`. |
+| `block-secret-file-stage` | `Bash` | A `git add` / `git commit -a` that would stage a credential *file*. Resolves pathspecs by asking git (`git add --dry-run`), so the sweeping `git add .` is caught, not just an explicitly named path. Respects `.gitignore`. |
+| `block-no-verify` | `Bash` | `--no-verify`, `-n`, `--no-gpg-sign`, `-c commit.gpgsign=false` on a git invocation. |
+| `block-force-push` | `Bash` | A force-push to `main`/`master`, including `--force-with-lease`. A feature branch is yours to rewrite. |
+| `guard-dangerous-bash` | `Bash` | `rm -rf` of `/`, `/*`, `~`, `$HOME`; `chmod -R 777 /`; `curl \| sh`; `dd of=/dev/sd*`; `mkfs`; the fork bomb. Intentionally narrow — `rm -rf ./build` and `sudo rm -rf /var` are *not* blocked. |
+| `protect-lockfile-edit` | `Write\|Edit` | A hand-edit to a dependency lockfile across twelve ecosystems (npm, yarn, pnpm, bun, Cargo, poetry, uv, Pipfile, Gemfile, composer, `go.sum`, npm-shrinkwrap). |
+
 ## Sync flow walkthrough
 
 What happens when you run `npm run sync` (or `node scripts/sync-harnesses.js`).
@@ -185,7 +213,7 @@ Default behavior with no `--target` flag runs all four adapters in order: `claud
 
 **`syncClaude()`** — runs in this order:
 
-1. Wipe `.claude/agents/`, `.claude/skills/`, `.claude/commands/`, `.claude/rules/`. Does **not** wipe the parent `.claude/` (Claude Code stores per-user state there — see [`decisions.md`](./decisions.md) D5).
+1. Wipe `.claude/agents/`, `.claude/skills/`, `.claude/commands/`, `.claude/rules/`, `.claude/hooks/`. Does **not** wipe the parent `.claude/` (Claude Code stores per-user state there, e.g. `settings.local.json` — see [`decisions.md`](./decisions.md) D5).
 2. Copy each `agents/<name>.md` to `.claude/agents/<name>.md` verbatim.
 3. Copy each `skills/<name>/` directory tree (including siblings of `SKILL.md`) to `.claude/skills/<name>/`.
 4. Copy each `commands/<name>.md` to `.claude/commands/<name>.md` verbatim.
@@ -195,11 +223,11 @@ Default behavior with no `--target` flag runs all four adapters in order: `claud
 
 **`syncCursor()`** — runs in this order:
 
-1. Wipe the entire `.cursor/` directory. Cursor stores no per-user state in this tree.
+1. Wipe `.cursor/agents/` and `.cursor/rules/`. Does **not** wipe the parent `.cursor/` — Cursor stores per-user state there, notably `environment.json`. (This adapter used to remove the whole tree, which deleted that state on every sync and made the `agentry-` prefix in step 2 pointless: there was nothing left to collide with.)
 2. Copy each `agents/<name>.md` to `.cursor/agents/agentry-<name>.md` (prefix avoids collisions with the user's own Cursor agents — see [`decisions.md`](./decisions.md) D6).
 3. For each `skills/<name>/SKILL.md`, run `toCursorRule` and write to `.cursor/rules/<name>.mdc`.
 4. For each `rules/<category>/<name>.md`, run `toCursorRule` (with `language`-derived globs) and write to `.cursor/rules/<category>/<name>.mdc` (the category subdirectory is preserved).
-5. If `mcp/` has sources, write the same `mcpServers` map to `.cursor/mcp.json` (the whole `.cursor/` tree was wiped in step 1, so there is no never-delete subtlety here).
+5. If `mcp/` has sources, write the same `mcpServers` map to `.cursor/mcp.json`. It sits outside the wiped `agents/` and `rules/` namespaces and is never deleted — the same contract as `.mcp.json` and `opencode.json` (D20).
 
 **`syncCodex()`** — runs in this order:
 
@@ -293,7 +321,9 @@ The script aborts if the generated source directory is missing — it prompts th
 
 ## Test inventory
 
-Tests are run by `npm test` using Node's built-in `node:test` runner. No external test framework is installed.
+Tests are run by `npm test` using Node's built-in `node:test` runner. No external test framework is installed. **243 cases across seven files.**
+
+Five of the seven test the transform layer by importing a pure function. The two hook files cannot: a hook is a script whose contract is a process exit code, so those tests spawn the real script as a child process and assert on its status. Importing a function would not prove the hook works.
 
 ### `tests/frontmatter.test.js` — 24 cases
 
@@ -345,6 +375,24 @@ Covers `validateServer`, `toMcpServersJson`, `toOpenCodeMcpConfig`:
 - `toMcpServersJson` — wraps under `mcpServers`; preserves the definition verbatim; sorts by name; output independent of input order; does not mutate the caller's array; 2-space indent with trailing newline; empty list yields an empty map.
 - `toOpenCodeMcpConfig` — wraps under `$schema` + `mcp`; maps stdio to `type: local` with a `command` array and folds `env` into `environment`; maps remote to `type: remote` with `url` + `headers`; sorts by name; trailing newline.
 
+### `tests/protect-generated-dirs.test.js` — 49 cases
+
+Spawns `hooks/protect-generated-dirs.js` and asserts on its exit code (`0` allow, `2` block).
+
+- Every generated subdirectory blocks — including the three `.opencode/` ones, which went unprotected from v0.7.0 until the hook was corrected.
+- Source files, the three MCP config files, and per-user harness state (`.claude/settings.local.json`, `.cursor/environment.json`, `.codex/config.toml`) are allowed — sync preserves them, so a hand-edit is legitimate.
+- Windows separators and absolute paths normalize; `notebook_path` is read alongside `file_path`.
+- Each block message names the correct source file to edit instead.
+- Empty stdin, malformed JSON, `{}`, a missing `tool_input`, and a null `file_path` all exit `0` — fail open.
+
+### `tests/hooks.test.js` — 96 cases
+
+Characterizes the other six guards, pinning both what they block *and* what they deliberately do not, so a later edit to a regex or a pathspec parser cannot silently widen or narrow a guard.
+
+- `block-no-verify`, `block-force-push`, `guard-dangerous-bash`, `protect-lockfile-edit`, `secret-scan-on-edit` — table-driven block/allow pairs, including the boundaries called out in the [Hook reference](#hook-reference) (a feature branch may be force-pushed; `rm -rf ./build` is not catastrophic).
+- `block-secret-file-stage` resolves pathspecs by asking git, so it is exercised against a **real temporary repository** holding a real `.env` and `server.key`: an explicit add, the sweeping `git add .` and `-A`, `--dry-run` staging nothing, and a gitignored file ceasing to be flagged.
+- All six are asserted to fail open across seven malformed-payload shapes — 42 of the cases here.
+
 ## Configuration reference
 
 ### `package.json` scripts
@@ -376,9 +424,19 @@ Three jobs, all on `ubuntu-latest` with Node 24, running on pushes and PRs to `m
 
 1. **`sync-determinism`** — `npm run sync`, then `git status --porcelain` fails the build if sync produced uncommitted changes. Catches the common contribution mistake of editing source without committing regenerated harness files.
 2. **`frontmatter-lint`** — `npm run lint`. Catches malformed agent/skill frontmatter.
-3. **`tests`** — `npm test`. Runs the 98 unit tests.
+3. **`tests`** — `npm test`. Runs the 243 unit tests.
 
-Tests do not block sync-determinism or lint; the three jobs run in parallel. There is no functionality test that exercises the actual sync output against a fixture — sync is verified only by its determinism and by the lint pass on its input.
+Scoped to `permissions: contents: read` — no job here writes a comment, a commit, or a release. Tests do not block sync-determinism or lint; the three jobs run in parallel. There is no functionality test that exercises the actual sync output against a fixture — sync is verified only by its determinism and by the lint pass on its input.
+
+### Release workflow (`.github/workflows/release.yml`)
+
+Triggered by a `v*` tag push. Needs `permissions: contents: write` because it creates a Release.
+
+1. **Verify the tag matches `package.json`** — a `vX.Y.Z` tag whose version disagrees with the manifest fails here.
+2. **Gate on the same three checks** — `npm run sync` must produce zero drift, then `npm run lint` and `npm test`.
+3. **Extract the CHANGELOG section** for that version, and `gh release create` with it as the notes.
+
+Two things to know before tagging. A tag push runs the workflow file **as it existed at the tagged commit**, so a tag older than this workflow fires nothing and its Release must be created by hand. And only the last commit of a release cycle is sync-clean: `chore(release): X` bumps the version while the regenerated output lands in the following `chore(sync): regenerate harness outputs for X`. Tag that one.
 
 ### Environment variables
 
