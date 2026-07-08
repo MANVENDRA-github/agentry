@@ -303,12 +303,13 @@ Other scripts:
 npm test
 ```
 
-98 tests run on Node's built-in test runner (`node:test`) with no external framework. They cover the transform layer — the part with real logic rather than file copying:
+143 tests run on Node's built-in test runner (`node:test`) with no external framework. They cover the transform layer — the part with real logic rather than file copying — and the one hook whose contract is a process exit code:
 
 - `tests/frontmatter.test.js` — the shared frontmatter parser and validators: CRLF endings, an empty body, a missing block, array-shaped values like `tools: [Read, Grep]`, a description that contains a colon, and the required-field and description-length checks.
 - `tests/cursor-transform.test.js` — `toCursorRule` across the with-frontmatter, without-frontmatter, and already-declares-`alwaysApply` cases, body-spacing normalization, and `globs` injection / `globsForLanguage` mapping.
 - `tests/codex-transform.test.js` — `renameSkill`, `agentToSkill`, and `ruleToSkill`: field drops, body preservation, description fallback, and null on input that has no frontmatter.
 - `tests/opencode-transform.test.js` — `agentToOpenCodeAgent` (sets `mode: subagent`, drops `name`/`tools`/`model`, preserves the body) and `commandToOpenCode` (keeps `description`, drops `argument-hint`, preserves `$ARGUMENTS`).
+- `tests/protect-generated-dirs.test.js` — the hook is a script, not a function, so this runs the real thing as a child process and asserts on its exit code (`0` allow / `2` block): every generated location blocks, source files and the user-editable `.mcp.json` / `opencode.json` do not, Windows separators and absolute paths normalize, each block message names the right source file, and a malformed payload fails open rather than wedging the session.
 
 CI (`.github/workflows/sync-check.yml`) runs three jobs on every push and pull request: sync determinism, frontmatter lint, and the test suite. A `release` workflow cuts a GitHub Release from a `v*` tag and the matching CHANGELOG section, gated on the same three checks.
 
