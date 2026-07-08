@@ -75,7 +75,7 @@ Two decisions do the load-bearing work.
 
 **Regeneration over editing.** `npm run sync` is idempotent: run it twice and you get a byte-identical tree. You never hand-edit the generated directories — the source directories are the only thing you touch. CI enforces this. After it runs sync, `git status --porcelain` must come back empty, so a pull request that edits a source file without committing the regenerated output fails the build. A `protect-generated-dirs` hook catches the mistake even earlier, at the moment you try to write the file.
 
-**Wipe only what you own.** An adapter deletes only the subdirectories it generates — `.claude/agents/`, `.claude/skills/`, and so on — never the parent `.claude/`. The harness keeps per-user state at that top level (`settings.local.json` for Claude Code, `config.toml` for Codex, `opencode.json` for OpenCode), and clobbering it would be destructive. Each adapter cleans its own output and leaves the user's data alone.
+**Wipe only what you own.** An adapter deletes only the subdirectories it generates — `.claude/agents/`, `.cursor/rules/`, `.codex/agents/skills/`, and so on — never the parent harness directory. Each harness keeps per-user state at that top level (`settings.local.json` for Claude Code, `environment.json` for Cursor, `config.toml` for Codex, `opencode.json` for OpenCode), and clobbering it would be destructive. The `protect-generated-dirs` hook is held to the same line: it blocks exactly the wiped subdirectories and nothing else, so the guard and the engine cannot disagree about what "generated" means.
 
 ```
 agents/ skills/ commands/ rules/ hooks/ mcp/      ← source of truth (edit these)
@@ -303,7 +303,7 @@ Other scripts:
 npm test
 ```
 
-239 tests run on Node's built-in test runner (`node:test`) with no external framework. They cover the transform layer — the part with real logic rather than file copying — and all seven hooks, whose contract is a process exit code rather than a return value:
+243 tests run on Node's built-in test runner (`node:test`) with no external framework. They cover the transform layer — the part with real logic rather than file copying — and all seven hooks, whose contract is a process exit code rather than a return value:
 
 - `tests/frontmatter.test.js` — the shared frontmatter parser and validators: CRLF endings, an empty body, a missing block, array-shaped values like `tools: [Read, Grep]`, a description that contains a colon, and the required-field and description-length checks.
 - `tests/cursor-transform.test.js` — `toCursorRule` across the with-frontmatter, without-frontmatter, and already-declares-`alwaysApply` cases, body-spacing normalization, and `globs` injection / `globsForLanguage` mapping.
