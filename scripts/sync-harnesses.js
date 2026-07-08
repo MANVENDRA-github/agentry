@@ -277,11 +277,20 @@ async function syncClaude() {
  * Sync into .cursor/. Agents are copied verbatim with an `agentry-` prefix to
  * avoid collisions with the user's own Cursor agents. Skills are translated to
  * .mdc rules with `alwaysApply: false` (see toCursorRule).
+ *
+ * Only the generated subdirectories are wiped — the same "wipe what you own"
+ * discipline as syncClaude, syncCodex, and syncOpenCode. This adapter used to
+ * remove the whole .cursor/ tree, which deleted the user's own Cursor project
+ * state (`.cursor/environment.json` and anything else they keep there) on every
+ * sync, and made the `agentry-` prefix pointless: there was nothing left to
+ * collide with. `.cursor/mcp.json` is rewritten below when MCP sources exist
+ * and, like `.mcp.json` and `opencode.json`, is never deleted (D20).
  */
 async function syncCursor() {
   console.log("\n[cursor]");
   const cursorDir = path.join(REPO_ROOT, ".cursor");
-  await rmGenerated(cursorDir);
+  await rmGenerated(path.join(cursorDir, "agents"));
+  await rmGenerated(path.join(cursorDir, "rules"));
 
   for (const entry of await readDirSafe(SOURCES.agents)) {
     if (entry.isFile() && entry.name.endsWith(".md")) {
@@ -332,8 +341,9 @@ async function syncCursor() {
 
   // mcp/<name>.json -> .cursor/mcp.json  { "mcpServers": { ... } }
   // Cursor reads project MCP from .cursor/mcp.json, the same `mcpServers` shape
-  // as Claude. The whole .cursor/ tree was wiped at the top of this adapter, so
-  // any stale file is already gone — we simply (re)write when sources exist.
+  // as Claude. It sits outside the wiped agents/ and rules/ namespaces and may
+  // carry the user's own servers, so it is written when sources exist and never
+  // deleted — the same contract as .mcp.json and opencode.json (D20).
   const cursorServers = await loadMcpServers();
   if (cursorServers.length) {
     await writeFile(path.join(cursorDir, "mcp.json"), toMcpServersJson(cursorServers));

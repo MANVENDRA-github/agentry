@@ -83,8 +83,14 @@ describe("protect-generated-dirs: allows what is not generated", () => {
     // they may carry the user's own configuration. A hand-edit is legitimate.
     ".mcp.json",
     "opencode.json",
-    // The parent .opencode/ is not wiped — only its three generated subdirs are.
+    ".cursor/mcp.json",
+    // Only the generated subdirectories are wiped, never the parent harness
+    // directory — so whatever the user keeps at its top level is theirs.
+    // .cursor/environment.json is Cursor's own background-agent config.
     ".opencode/some-user-state.json",
+    ".cursor/environment.json",
+    ".claude/settings.local.json",
+    ".codex/config.toml",
   ];
 
   for (const file of allowed) {

@@ -5,14 +5,18 @@
 // wiped and rewritten on every sync." This hook enforces that rule at the tool
 // layer: it blocks Write/Edit-class tool calls whose target path lives inside a
 // generated directory (.claude/agents|skills|commands|rules|hooks/,
-// .claude-plugin/, .cursor/, .codex/, .opencode/agents|skills|commands/), and
-// points the author back at the source file under agents/, skills/, commands/,
-// or rules/.
+// .claude-plugin/, .cursor/agents|rules/, .codex/agents/skills/,
+// .opencode/agents|skills|commands/), and points the author back at the source
+// file under agents/, skills/, commands/, or rules/.
 //
-// It deliberately does NOT block `.mcp.json` or `opencode.json`. Those sit
-// outside every wiped namespace and may hold the user's own configuration —
-// sync writes them when MCP sources exist but never deletes them (D20), so a
-// hand-edit there is legitimate and must not be refused.
+// The list names the wiped subdirectories exactly, never a parent harness
+// directory, so the guard and the sync engine agree on what "generated" means.
+// It therefore does NOT block what each harness keeps as per-user state at that
+// top level — `.claude/settings.local.json`, `.cursor/environment.json`,
+// `.codex/config.toml` — nor the three MCP config files (`.mcp.json`,
+// `.cursor/mcp.json`, `opencode.json`), which sync writes when MCP sources exist
+// but never deletes (D20). Sync preserves all of these, so a hand-edit is
+// legitimate and must not be refused.
 //
 // This is agentry's pattern-proof hook — it demonstrates the hooks pipeline the
 // same way rules/typescript/strict-mode.md demonstrates the rules pipeline.
@@ -45,8 +49,9 @@ const GENERATED = [
   ".claude/rules/",
   ".claude/hooks/",
   ".claude-plugin/",
-  ".cursor/",
-  ".codex/",
+  ".cursor/agents/",
+  ".cursor/rules/",
+  ".codex/agents/skills/",
   ".opencode/agents/",
   ".opencode/skills/",
   ".opencode/commands/",
