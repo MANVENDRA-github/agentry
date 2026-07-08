@@ -4,6 +4,45 @@ All notable changes to agentry are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.16.0] — correctness, hardening, and the first tests that execute a hook
+
+No new content. This release fixes two real defects, closes the gap that let them survive, and brings the repo up to the standard it asks of its contributors.
+
+The defects were found the same way: by running the code instead of reading it. `syncCursor` deleted every file a user kept in `.cursor/` — including `.cursor/environment.json`, Cursor's own background-agent config — while the three other adapters removed only the subdirectories they generate. And `protect-generated-dirs`, the hook that enforces the cardinal rule, never protected `.opencode/` at all: the adapter shipped in v0.7.0 and the hook was never updated.
+
+Both survived because **no test in this repo had ever executed a hook.** The suite covered the transform layer only. It now covers all seven guards, and the sync engine and the guard are verified to describe the same set of generated paths — a file is planted at every harness path, sync is run, and what survived is compared against the hook's verdict.
+
+Two of the fixes are the repo obeying its own rules. `install.ps1` shipped without `Set-StrictMode -Version Latest`, the first item in `rules/powershell/powershell-strict-mode.md`'s "what you do not do" list. `sync-check.yml` declared no `permissions:` block, the first thing the `infra-config-reviewer` agent is written to flag.
+
+### Fixed
+
+- **`syncCursor` no longer deletes the user's `.cursor/` state.** It wiped the whole tree; it now removes only `.cursor/agents/` and `.cursor/rules/`, matching the "wipe only what you own" discipline the other three adapters already followed (D5). `.cursor/mcp.json` joins `.mcp.json` and `opencode.json` under D20: written when MCP sources exist, never deleted. The function's docstring had claimed the `agentry-` prefix avoided collisions with the user's own Cursor agents — agents it had just deleted.
+- **`protect-generated-dirs` now guards the generated `.opencode/` subdirectories.** `.opencode/agents/`, `.opencode/skills/`, and `.opencode/commands/` are wiped on every sync but could be hand-edited with no warning.
+- **`protect-generated-dirs` no longer over-blocks.** It listed `.cursor/` and `.codex/` wholesale, refusing edits to `.cursor/environment.json` and `.codex/config.toml` — per-user state that sync preserves. The `GENERATED` list now names the wiped subdirectories exactly, so the guard and the engine cannot disagree.
+- **The plugin manifest can no longer drift from the released version.** `.claude-plugin/plugin.json` hardcoded `version`, `description`, and `license`, so a release bump had to be remembered in two files — and CI could not catch a miss, because a stale constant still syncs deterministically. Every field is now read from `package.json`.
+- **`install.ps1` gained `Set-StrictMode -Version Latest`.** It resolves destination paths from variables and then removes and copies directories under them; without strict mode a misspelled variable expands to `$null` rather than erroring.
+
+### Added
+
+- `LICENSE` — the MIT text. `package.json` and the README both claimed MIT, but with no license file the repo was legally all rights reserved, while `CONTRIBUTING.md` asked contributors to agree their work was MIT-licensed.
+- `SECURITY.md` — a threat model scoped to what agentry is (no server, no ports, no network calls), and a private advisory flow for reporting a vulnerability.
+- `CODE_OF_CONDUCT.md` — Contributor Covenant 2.1.
+- `.github/PULL_REQUEST_TEMPLATE.md` and `.github/ISSUE_TEMPLATE/` — a bug form, a proposal form, and a config that disables blank issues and routes security reports away from the public tracker.
+- `tests/protect-generated-dirs.test.js` and `tests/hooks.test.js` — the first tests that execute a hook. A hook's contract is a process contract (JSON on stdin, exit `0` allow / `2` block), so these spawn the real script and assert on its exit code. Every hook is asserted to **fail open** on malformed input: a hook that throws blocks every tool call in the session. Suite: **98 → 243 tests**.
+- README status badges, and a `Hook reference` section in `docs/reference.md` — seven executable guards that the "per-file, per-module map" had never mentioned.
+
+### Changed
+
+- **`package.json` is marked `private`.** agentry installs by clone, never from a registry (D12/D21); a stray `npm publish` would have uploaded the repo under the unclaimed name `agentry`. Also adds `repository`, `bugs`, `homepage`, and `author`, and derives every plugin-manifest field from them.
+- `release.yml` moved to `actions/checkout@v7` / `actions/setup-node@v6`, matching `sync-check.yml`.
+- README consolidates its component counts into one table. The prose claimed thirty-two skills while the table listed twenty-four — eight skills added across v0.12–v0.15 were never added to it. Counts had been spelled as words across five separate sentences, so no digit-based search ever caught the gap.
+- `CONTRIBUTING.md` no longer tells contributors that language rules are "v0.3+ territory" — the repo is at v0.15 with eighteen language rule directories.
+- `docs/reference.md` corrected: it marked `.mcp.json`, `.cursor/mcp.json`, and `opencode.json` "do not edit" (sync preserves all three), described a `.cursor/` wipe that no longer happens, listed hooks as `{sh,js}` when all seven are `.js`, and claimed 98 unit tests.
+
+### Security
+
+- `sync-check.yml` is scoped to `permissions: contents: read`. It declared none, so it inherited the repository's default `GITHUB_TOKEN` scope — read/write across contents, issues, and packages on older repo settings. None of its three jobs writes anything.
+
 ## [0.15.0] — cross-cutting engineering skills, new language/format rules, and safety guards
 
 Adds six neutral engineering-discipline skills, five rules extending coverage to two config formats, a shell, and two more languages (including the maintainers' own PowerShell), three review/authoring agents, a `/describe-pr` command, and two guard hooks. Each addition was found by auditing the corpus for genuine gaps and vetted against the curation bar (D10) — dedup and real-problem checks against the existing catalog, with ten proposals cut as duplicates or speculative. Same bar as prior releases; no new dependencies (D11).
