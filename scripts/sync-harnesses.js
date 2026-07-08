@@ -254,17 +254,17 @@ async function syncClaude() {
     );
   }
 
-  // Version, description, and license come from package.json — the single place a
-  // release bump happens — so the plugin manifest can never drift from the released
-  // version. Hardcoding them here meant a bump had to be remembered in two files.
+  // Every manifest field comes from package.json — the single place project
+  // metadata and a release bump live — so the plugin manifest can never drift
+  // from it. Hardcoding any of these meant remembering to change two files.
   const pkg = JSON.parse(
     await fs.readFile(path.join(REPO_ROOT, "package.json"), "utf8"),
   );
   const manifest = {
-    name: "agentry",
+    name: pkg.name,
     version: pkg.version,
     description: pkg.description,
-    author: "MANVENDRA-github",
+    author: pkg.author,
     license: pkg.license,
   };
   await writeFile(
