@@ -3,7 +3,17 @@
   "version": "0.15.0",
   "description": "Author your AI coding agents and skills once. Sync them to every harness you use.",
   "license": "MIT",
+  "author": "MANVENDRA-github",
   "type": "module",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MANVENDRA-github/agentry.git"
+  },
+  "bugs": {
+    "url": "https://github.com/MANVENDRA-github/agentry/issues"
+  },
+  "homepage": "https://github.com/MANVENDRA-github/agentry#readme",
   "scripts": {
     "sync": "node scripts/sync-harnesses.js",
     "sync:dry": "node scripts/sync-harnesses.js --dry-run",
@@ -19,8 +29,10 @@
     "claude-code",
     "cursor",
     "codex",
+    "opencode",
     "ai-agents",
     "skills",
-    "agent-harness"
+    "agent-harness",
+    "mcp"
   ]
 }
