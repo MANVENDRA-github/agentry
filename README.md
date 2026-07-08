@@ -1,5 +1,11 @@
 # agentry
 
+[![sync-check](https://github.com/MANVENDRA-github/agentry/actions/workflows/sync-check.yml/badge.svg?branch=main)](https://github.com/MANVENDRA-github/agentry/actions/workflows/sync-check.yml)
+[![Latest release](https://img.shields.io/github/v/release/MANVENDRA-github/agentry?sort=semver)](https://github.com/MANVENDRA-github/agentry/releases/latest)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Node](https://img.shields.io/badge/node-%3E%3D18-informational)](package.json)
+[![Dependencies: none](https://img.shields.io/badge/dependencies-none-success)](package.json)
+
 > Author your AI coding agents and skills once. Sync them to every harness you use.
 
 agentry is a configuration framework that lets you write AI coding agents, skills, commands, rules, and MCP server configs one time, in a single harness-neutral format, then generate the tool-specific config for Claude Code, Cursor, Codex, and OpenCode from that one source.
