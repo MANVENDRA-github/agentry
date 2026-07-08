@@ -1,0 +1,15 @@
+# Blank issues are disabled on purpose. The two forms exist to collect the
+# information the first reply would otherwise have to ask for.
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/MANVENDRA-github/agentry/security/advisories/new
+    about: 'Never in a public issue. Private advisories reach the maintainer directly and stay closed until a fix ships. See SECURITY.md.'
+
+  - name: Ask a question about authoring
+    url: https://github.com/MANVENDRA-github/agentry/blob/main/docs/authoring.md
+    about: 'How to write an agent, skill, command, rule, hook, or MCP server, and how each is translated per harness.'
+
+  - name: Read the design decisions before proposing a change
+    url: https://github.com/MANVENDRA-github/agentry/blob/main/docs/decisions.md
+    about: 'Numbered decisions and their trade-offs. Many proposals are already answered here.'
