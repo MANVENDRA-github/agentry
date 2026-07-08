@@ -6,6 +6,14 @@ on:
   pull_request:
     branches: [main, dev]
 
+# Least privilege. Every job here only checks out the repo and runs npm — none
+# writes a comment, a commit, or a release. Without this block the workflow
+# inherits the repository's default GITHUB_TOKEN scope, which on older repo
+# settings is read/write across contents, issues, packages, and more. See
+# release.yml, which asks for `contents: write` because it genuinely needs it.
+permissions:
+  contents: read
+
 jobs:
   sync-determinism:
     name: Sync determinism
