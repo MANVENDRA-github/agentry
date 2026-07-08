@@ -254,13 +254,18 @@ async function syncClaude() {
     );
   }
 
+  // Version, description, and license come from package.json — the single place a
+  // release bump happens — so the plugin manifest can never drift from the released
+  // version. Hardcoding them here meant a bump had to be remembered in two files.
+  const pkg = JSON.parse(
+    await fs.readFile(path.join(REPO_ROOT, "package.json"), "utf8"),
+  );
   const manifest = {
     name: "agentry",
-    version: "0.15.0",
-    description:
-      "Author your AI coding agents and skills once. Sync them to every harness you use.",
+    version: pkg.version,
+    description: pkg.description,
     author: "MANVENDRA-github",
-    license: "MIT",
+    license: pkg.license,
   };
   await writeFile(
     path.join(REPO_ROOT, ".claude-plugin", "plugin.json"),
