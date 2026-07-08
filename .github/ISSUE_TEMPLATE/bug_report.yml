@@ -1,0 +1,97 @@
+name: Bug report
+description: Something in agentry behaves differently than documented.
+labels: ['bug']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before filing: if this is a **security** problem — a hook that fails open, a secret leaking into generated output, sync writing outside the generated directories — do not open an issue. Report it privately via [Security advisories](https://github.com/MANVENDRA-github/agentry/security/advisories/new). See `SECURITY.md`.
+
+  - type: checkboxes
+    id: not-generated
+    attributes:
+      label: Confirm the source of truth
+      description: agentry regenerates `.claude/`, `.cursor/`, `.codex/`, `.opencode/`, `.mcp.json`, and `opencode.json` on every sync. Hand-edits to those are wiped, and that is not a bug.
+      options:
+        - label: I did not hand-edit a generated directory and then report its contents being overwritten.
+          required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: The actual behaviour, and what you expected instead.
+      placeholder: |
+        Expected: `npm run sync` writes .cursor/rules/foo.mdc with alwaysApply: false
+        Actual:   the file is written with alwaysApply: true
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: The smallest sequence of commands that shows the problem, starting from a fresh clone.
+      placeholder: |
+        git clone https://github.com/MANVENDRA-github/agentry.git && cd agentry
+        # create skills/example/SKILL.md with ...
+        npm run sync
+        cat .cursor/rules/example.mdc
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: output
+    attributes:
+      label: Real command output
+      description: Paste what the terminal actually printed. Not a summary of it.
+      render: shell
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: agentry version or commit
+      description: The tag you are on, or `git rev-parse --short HEAD`.
+      placeholder: v0.15.0
+    validations:
+      required: true
+
+  - type: input
+    id: node
+    attributes:
+      label: Node version
+      description: Output of `node --version`. agentry requires Node 18 or newer.
+      placeholder: v24.4.0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Linux
+        - macOS
+        - Windows
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: harness
+    attributes:
+      label: Which harness output is affected
+      multiple: true
+      options:
+        - Claude Code (.claude/)
+        - Cursor (.cursor/)
+        - Codex (.codex/)
+        - OpenCode (.opencode/)
+        - MCP config (.mcp.json / opencode.json)
+        - The sync engine itself (scripts/)
+        - Not harness-specific
+    validations:
+      required: true
