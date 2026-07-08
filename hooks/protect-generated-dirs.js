@@ -5,8 +5,14 @@
 // wiped and rewritten on every sync." This hook enforces that rule at the tool
 // layer: it blocks Write/Edit-class tool calls whose target path lives inside a
 // generated directory (.claude/agents|skills|commands|rules|hooks/,
-// .claude-plugin/, .cursor/, .codex/), and points the author back at the
-// source file under agents/, skills/, commands/, or rules/.
+// .claude-plugin/, .cursor/, .codex/, .opencode/agents|skills|commands/), and
+// points the author back at the source file under agents/, skills/, commands/,
+// or rules/.
+//
+// It deliberately does NOT block `.mcp.json` or `opencode.json`. Those sit
+// outside every wiped namespace and may hold the user's own configuration —
+// sync writes them when MCP sources exist but never deletes them (D20), so a
+// hand-edit there is legitimate and must not be refused.
 //
 // This is agentry's pattern-proof hook — it demonstrates the hooks pipeline the
 // same way rules/typescript/strict-mode.md demonstrates the rules pipeline.
@@ -28,7 +34,10 @@
 
 import { stdin } from "node:process";
 
-// Path fragments that identify a generated, never-hand-edit location.
+// Path fragments that identify a generated, never-hand-edit location. The
+// .opencode/ entries name the three wiped subdirectories rather than the parent,
+// because syncOpenCode() only removes those (the "wipe what you own" rule) and
+// the parent may hold the user's own OpenCode state.
 const GENERATED = [
   ".claude/agents/",
   ".claude/skills/",
@@ -38,6 +47,9 @@ const GENERATED = [
   ".claude-plugin/",
   ".cursor/",
   ".codex/",
+  ".opencode/agents/",
+  ".opencode/skills/",
+  ".opencode/commands/",
 ];
 
 // Map a generated path back to the source directory the author should edit.
@@ -52,6 +64,9 @@ function sourceHint(p) {
   if (/\.claude\/rules\//.test(p)) return "rules/<category>/";
   if (/\.claude\/hooks\//.test(p)) return "hooks/";
   if (/\.claude-plugin\//.test(p)) return "scripts/sync-harnesses.js (manifest)";
+  if (/\.opencode\/agents\//.test(p)) return "agents/";
+  if (/\.opencode\/skills\//.test(p)) return "skills/<name>/SKILL.md";
+  if (/\.opencode\/commands\//.test(p)) return "commands/";
   return "the source directory (agents/, skills/, commands/, rules/, hooks/)";
 }
 
